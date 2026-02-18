@@ -9,7 +9,11 @@ import {
     Heading1,
     Heading2,
     Undo,
-    Redo
+    Redo,
+    Highlighter,
+    CheckSquare,
+    Underline as UnderlineIcon,
+    Share2
 } from 'lucide-react'
 interface EditorToolbarProps {
     editor: Editor | null
@@ -17,6 +21,14 @@ interface EditorToolbarProps {
 
 export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
     if (!editor) return null
+
+    const copyShareLink = () => {
+        const hash = window.location.hash
+        if (hash) {
+            navigator.clipboard.writeText(window.location.href)
+            alert('Share link copied to clipboard!')
+        }
+    }
 
     const items = [
         {
@@ -44,6 +56,18 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
             isActive: () => editor.isActive('italic'),
         },
         {
+            icon: UnderlineIcon,
+            title: 'Underline',
+            action: () => editor.chain().focus().toggleUnderline().run(),
+            isActive: () => editor.isActive('underline'),
+        },
+        {
+            icon: Highlighter,
+            title: 'Highlight',
+            action: () => editor.chain().focus().toggleHighlight().run(),
+            isActive: () => editor.isActive('highlight'),
+        },
+        {
             icon: List,
             title: 'Bullet List',
             action: () => editor.chain().focus().toggleBulletList().run(),
@@ -56,6 +80,12 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
             isActive: () => editor.isActive('orderedList'),
         },
         {
+            icon: CheckSquare,
+            title: 'Task List',
+            action: () => editor.chain().focus().toggleTaskList().run(),
+            isActive: () => editor.isActive('taskList'),
+        },
+        {
             icon: Quote,
             title: 'Blockquote',
             action: () => editor.chain().focus().toggleBlockquote().run(),
@@ -66,6 +96,12 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
             title: 'Code Block',
             action: () => editor.chain().focus().toggleCodeBlock().run(),
             isActive: () => editor.isActive('codeBlock'),
+        },
+        {
+            icon: Share2,
+            title: 'Copy Share Link',
+            action: copyShareLink,
+            isActive: () => false,
         },
         {
             icon: Undo,
