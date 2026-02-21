@@ -9,14 +9,36 @@ import {
     Heading1,
     Heading2,
     Undo,
-    Redo
+    Redo,
+    Highlighter,
+    CheckSquare,
+    Underline as UnderlineIcon,
+    Share2,
+    Link as LinkIcon,
+    AlignLeft,
+    AlignCenter,
+    AlignRight
 } from 'lucide-react'
+
 interface EditorToolbarProps {
     editor: Editor | null
 }
 
 export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
     if (!editor) return null
+
+    const copyShareLink = () => {
+        const hash = window.location.hash
+        if (hash) {
+            navigator.clipboard.writeText(window.location.href)
+            alert('Share link copied to clipboard!')
+        }
+    }
+
+    const setLink = () => {
+        const url = window.prompt('URL')
+        if (url) editor.chain().focus().setLink({ href: url }).run()
+    }
 
     const items = [
         {
@@ -44,6 +66,42 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
             isActive: () => editor.isActive('italic'),
         },
         {
+            icon: UnderlineIcon,
+            title: 'Underline',
+            action: () => editor.chain().focus().toggleUnderline().run(),
+            isActive: () => editor.isActive('underline'),
+        },
+        {
+            icon: Highlighter,
+            title: 'Highlight',
+            action: () => editor.chain().focus().toggleHighlight().run(),
+            isActive: () => editor.isActive('highlight'),
+        },
+        {
+            icon: LinkIcon,
+            title: 'Link',
+            action: setLink,
+            isActive: () => editor.isActive('link'),
+        },
+        {
+            icon: AlignLeft,
+            title: 'Align Left',
+            action: () => editor.chain().focus().setTextAlign('left').run(),
+            isActive: () => editor.isActive({ textAlign: 'left' }),
+        },
+        {
+            icon: AlignCenter,
+            title: 'Align Center',
+            action: () => editor.chain().focus().setTextAlign('center').run(),
+            isActive: () => editor.isActive({ textAlign: 'center' }),
+        },
+        {
+            icon: AlignRight,
+            title: 'Align Right',
+            action: () => editor.chain().focus().setTextAlign('right').run(),
+            isActive: () => editor.isActive({ textAlign: 'right' }),
+        },
+        {
             icon: List,
             title: 'Bullet List',
             action: () => editor.chain().focus().toggleBulletList().run(),
@@ -56,6 +114,12 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
             isActive: () => editor.isActive('orderedList'),
         },
         {
+            icon: CheckSquare,
+            title: 'Task List',
+            action: () => editor.chain().focus().toggleTaskList().run(),
+            isActive: () => editor.isActive('taskList'),
+        },
+        {
             icon: Quote,
             title: 'Blockquote',
             action: () => editor.chain().focus().toggleBlockquote().run(),
@@ -66,6 +130,12 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
             title: 'Code Block',
             action: () => editor.chain().focus().toggleCodeBlock().run(),
             isActive: () => editor.isActive('codeBlock'),
+        },
+        {
+            icon: Share2,
+            title: 'Copy Share Link',
+            action: copyShareLink,
+            isActive: () => false,
         },
         {
             icon: Undo,
@@ -82,14 +152,12 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
     ]
 
     return (
-        <div className="floating-toolbar glass">
+        <div className="floating-toolbar">
             {items.map((item, index) => (
                 <button
                     key={index}
                     onClick={item.action}
-                    className={
-                        'toolbar-btn' + (item.isActive() ? ' active' : '')
-                    }
+                    className={`toolbar-btn ${item.isActive() ? 'active' : ''}`}
                     title={item.title}
                 >
                     <item.icon size={18} />
