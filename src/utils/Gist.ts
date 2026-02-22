@@ -76,3 +76,33 @@ export async function getGist(gistId: string, token?: string): Promise<string> {
 
     return file.content;
 }
+
+/**
+ * Updates an existing gist.
+ */
+export async function updateGist(gistId: string, content: string, token: string): Promise<AxiosResponse> {
+    const finalToken = token || GLOBAL_GIST_TOKEN;
+    if (!finalToken) {
+        throw new Error("No GitHub token provided and no global fallback configured.");
+    }
+
+    const response = await axios.patch<GistResponse>(
+        `${GIST_API_URL}/${gistId}`,
+        {
+            files: {
+                "obscura.data": {
+                    content: content,
+                },
+            },
+        },
+        {
+            headers: {
+                "Authorization": `token ${finalToken}`,
+                "Content-Type": "application/json",
+                "Accept": "application/vnd.github.v3+json",
+            },
+        }
+    );
+
+    return response;
+}

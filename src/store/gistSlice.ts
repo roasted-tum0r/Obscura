@@ -1,6 +1,6 @@
 // src/store/gistSlice.ts
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
-import { createGist, getGist } from '../utils/Gist';
+import { createGist, updateGist, getGist } from '../utils/Gist';
 
 interface GistState {
     gistId: string | null;
@@ -20,13 +20,15 @@ const initialState: GistState = {
 
 export const saveToGist = createAsyncThunk(
     'gist/save',
-    async ({ content, token, callbackfn }: { content: string; token: string, callbackfn?: (params: any) => any }, { rejectWithValue }) => {
+    async ({ content, token, gistId, callbackfn }: { content: string; token: string, gistId?: string | null, callbackfn?: (params: any) => any }, { rejectWithValue }) => {
         try {
-            console.log("[Redux] Saving to Gist... Content length:", content.length);
-            const response = await createGist(content, token);
+            console.log("[Redux] Saving to Gist... Content length:", content.length, gistId ? `(Updating ${gistId})` : "(Creating new)");
+            const response = gistId
+                ? await updateGist(gistId, content, token)
+                : await createGist(content, token);
             console.log("[Redux] Gist created successfully. Response:", response.status, response.data.id);
             if (callbackfn) callbackfn(response);
-            return response.data.id;
+            return response.data.id || gistId;
         } catch (error: any) {
             console.error("[Redux] Gist save failed:", error.response?.data || error.message);
             return rejectWithValue(error.message || 'Failed to save to Gist');
@@ -41,7 +43,7 @@ export const fetchFromGist = createAsyncThunk(
             console.log("[Redux] Fetching Gist:", gistId);
             const content = await getGist(gistId, token);
             console.log("[Redux] Gist fetched successfully. Content length:", content.length);
-            return content;
+            return { content, gistId };
         } catch (error: any) {
             console.error("[Redux] Gist fetch failed:", error.response?.data || error.message);
             return rejectWithValue(error.message || 'Failed to fetch from Gist');
@@ -82,7 +84,8 @@ const gistSlice = createSlice({
             })
             .addCase(fetchFromGist.fulfilled, (state, action) => {
                 state.loading = false;
-                state.gistData = action.payload;
+                state.gistData = action.payload.content;
+                state.gistId = action.payload.gistId;
             })
             .addCase(fetchFromGist.rejected, (state, action) => {
                 state.loading = false;

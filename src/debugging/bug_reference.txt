@@ -1,0 +1,18 @@
+Obscura Bug Reference
+---------------------
+BUG-001: Key not extractable in Crypto.ts (Fixed)
+BUG-002: PDF export addImage UNKNOWN format (Fixed)
+BUG-003: Password protection bypass on setup (Fixed)
+BUG-004: Editor stats sync on load/refresh (Fixed)
+BUG-005: URL update block during lock (Fixed)
+BUG-006: Save Race Condition / Security Leak (Fixed)
+BUG-007: Salt Sync / Invalid Passkey error (Fixed)
+BUG-008: Salt Persistence in New Tabs (Fixed)
+BUG-009: Inefficient Gist Sync / New Gist per Save (Fixed)
+BUG-010: Gist Sync Active status lost on refresh (Fixed)
+BUG-011: Data Loss / Save-Gate Loop (Fixed)
+
+Details:
+BUG-011: Disabling the lock screen while keeping internal isLocked logic caused a "Save Gate". 
+Editors would stay in "Locked" state internally but allow typing, while blocking all saves and loads.
+Fix: Restored LockScreen UI and synchronized init/unlock flows.

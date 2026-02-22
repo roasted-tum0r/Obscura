@@ -6,111 +6,119 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 // --------------------------------------------------
-// 1️⃣ Generate a new AES-256 key
+// 1️⃣ Key Generation & Derivation
 // --------------------------------------------------
 export async function generateKey() {
-    return crypto.subtle.generateKey(
+    console.log("[Crypto] Generating new key...");
+    const key = await crypto.subtle.generateKey(
         {
-            name: "AES-GCM",   // Modern authenticated encryption mode
-            length: 256        // 256-bit key (strong)
+            name: "AES-GCM",
+            length: 256
         },
-        true,                // Key is exportable (so we can store/share it)
-        ["encrypt", "decrypt"] // Allowed usages
+        true,
+        ["encrypt", "decrypt"]
     )
+    console.log("[Crypto] Key generated. Extractable:", key.extractable);
+    return key;
+}
+
+export async function deriveKeyFromPassword(password: string, salt: Uint8Array) {
+    console.log("[Crypto] Deriving key from password...");
+    const passwordBytes = encoder.encode(password)
+    const baseKey = await crypto.subtle.importKey(
+        "raw",
+        passwordBytes,
+        "PBKDF2",
+        false,
+        ["deriveBits", "deriveKey"]
+    )
+
+    const key = await crypto.subtle.deriveKey(
+        {
+            name: "PBKDF2",
+            salt: salt as any,
+            iterations: 100000,
+            hash: "SHA-256"
+        },
+        baseKey,
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+    )
+    console.log("[Crypto] Key derived. Extractable:", key.extractable);
+    return key;
+}
+
+export function generateSalt() {
+    return crypto.getRandomValues(new Uint8Array(16))
+}
+
+export function exportSalt(salt: Uint8Array) {
+    return btoa(String.fromCharCode(...salt))
+}
+
+export function importSalt(base64Salt: string) {
+    return Uint8Array.from(atob(base64Salt), c => c.charCodeAt(0))
 }
 
 // --------------------------------------------------
-// 2️⃣ Export CryptoKey to base64 string
+// 2️⃣ Export/Import Keys
 // --------------------------------------------------
 export async function exportKey(key: CryptoKey) {
-
-    // Export key as raw binary
+    console.log("[Crypto] Exporting key... Extractable:", key.extractable, "Type:", key.type);
     const raw = await crypto.subtle.exportKey("raw", key)
-    console.log(key, 'key got')
-
-    // Convert ArrayBuffer -> Uint8Array
     const bytes = new Uint8Array(raw)
-
-    // Convert bytes -> string -> base64
     return btoa(String.fromCharCode(...bytes))
 }
 
-// --------------------------------------------------
-// 3️⃣ Import base64 string back into CryptoKey
-// --------------------------------------------------
 export async function importKey(base64Key: string) {
-
-    // Convert base64 -> bytes
-    const raw = Uint8Array.from(
-        atob(base64Key),
-        c => c.charCodeAt(0)
-    )
-
-    // Import into Web Crypto as AES-GCM key
-    return crypto.subtle.importKey(
+    console.log("[Crypto] Importing key from base64...");
+    const raw = Uint8Array.from(atob(base64Key), c => c.charCodeAt(0))
+    const key = await crypto.subtle.importKey(
         "raw",
         raw,
         { name: "AES-GCM" },
-        false, // not exportable after import
+        true, // 🔥 CRITICAL: Must be true so we can export it again during save
         ["decrypt", "encrypt"]
     )
+    console.log("[Crypto] Key imported. Extractable:", key.extractable);
+    return key;
 }
 
 // --------------------------------------------------
-// 4️⃣ Encrypt text
+// 3️⃣ Encryption & Decryption
 // --------------------------------------------------
 export async function encrypt(text: string, key: CryptoKey) {
-
-    // Generate random 12-byte IV
-    // Must be unique per encryption
     const iv = crypto.getRandomValues(new Uint8Array(12))
-
-    // Convert plaintext string -> bytes
     const encodedText = encoder.encode(text)
 
-    // Perform encryption
     const encryptedBuffer = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv },
         key,
         encodedText
     )
 
-    // Convert encrypted ArrayBuffer -> base64
     const encryptedBytes = new Uint8Array(encryptedBuffer)
 
     return {
-        iv: btoa(String.fromCharCode(...iv)), // store IV
-        data: btoa(String.fromCharCode(...encryptedBytes)) // store ciphertext
+        iv: btoa(String.fromCharCode(...iv)),
+        data: btoa(String.fromCharCode(...encryptedBytes))
     }
 }
 
-// --------------------------------------------------
-// 5️⃣ Decrypt text
-// --------------------------------------------------
 export async function decrypt(
     data: string,
     iv: string,
     key: CryptoKey
 ) {
+    const encryptedBytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
+    const ivBytes = Uint8Array.from(atob(iv), c => c.charCodeAt(0))
 
-    // Convert base64 -> bytes
-    const encryptedBytes = Uint8Array.from(
-        atob(data),
-        c => c.charCodeAt(0)
-    )
-
-    const ivBytes = Uint8Array.from(
-        atob(iv),
-        c => c.charCodeAt(0)
-    )
-
-    // Decrypt
     const decryptedBuffer = await crypto.subtle.decrypt(
         { name: "AES-GCM", iv: ivBytes },
         key,
         encryptedBytes
     )
 
-    // Convert decrypted bytes -> string
     return decoder.decode(decryptedBuffer)
 }

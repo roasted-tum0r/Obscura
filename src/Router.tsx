@@ -5,7 +5,7 @@ export const RoutePage = () => {
     return (
         <>
             <Routes location={location}>
-                <Route path="/" element={<MainEditor />} />
+                <Route path="/:filename?" element={<MainEditor />} />
             </Routes>
         </>
     )
