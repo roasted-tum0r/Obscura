@@ -1,6 +1,6 @@
 import React from 'react'
 import { Lock, X, Loader2 } from 'lucide-react'
-import { deriveKeyFromPassword, importSalt } from "../utils/Crypto"
+// import { deriveKeyFromPassword, importSalt } from "../utils/Crypto"
 
 interface ExportVerifyModalProps {
     isOpen: boolean
