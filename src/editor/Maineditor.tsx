@@ -30,27 +30,25 @@ import { common, createLowlight } from 'lowlight'
 
 const lowlight = createLowlight(common)
 
-import { saveAs } from 'file-saver'
-import { asBlob } from 'html-docx-js-typescript'
-import { jsPDF } from 'jspdf'
-import html2canvas from 'html2canvas'
-
 import {
     importKey,
-    decrypt,
-    encrypt,
-    exportKey,
-    generateKey,
     deriveKeyFromPassword,
-    generateSalt,
-    exportSalt,
-    importSalt
+    importSalt,
+    exportSalt
 } from "../utils/Crypto"
+import { SecureStorage } from "../utils/SecureStorage"
 import { EditorToolbar } from "./EditorToolbar"
 import { SetupPasswordModal } from "./SetupPasswordModal"
 import { LockScreen } from "./LockScreen"
 import { ExportVerifyModal } from "./ExportVerifyModal"
-import { useParams, useNavigate } from "react-router-dom"
+import { ExportBar, performExportAction } from "./ExportBar"
+import { StorageHUD } from "./StorageHUD"
+import { StatsBubble } from "./StatsBubble"
+import { useIdleLock } from "../hooks/useIdleLock"
+import { useEditorState } from "../hooks/useEditorState"
+import { useDispatch, useSelector } from "react-redux"
+import type { RootState, AppDispatch } from '../store';
+import { fetchFromGist } from "../store/gistSlice"
 import {
     Bold,
     Italic,
@@ -58,74 +56,55 @@ import {
     Heading1,
     Heading2,
     Baseline,
-    Github,
-    // Lock,
-    // Unlock,
-    Loader2,
     CheckCircle2,
     Code,
     Link as LinkIcon,
-    Terminal,
     AlignLeft,
     AlignCenter,
     AlignRight,
-    Download,
-    FileType,
-    FileIcon
 } from 'lucide-react'
-import { Compressor } from "../utils/Compressor"
-import { useDispatch, useSelector } from "react-redux"
-import type { RootState, AppDispatch } from "../store"
-import { saveToGist, fetchFromGist, setGithubToken } from "../store/gistSlice"
-
-const debounce = (fn: Function, ms: number) => {
-    let timeoutId: ReturnType<typeof setTimeout>
-    return function (this: any, ...args: any[]) {
-        clearTimeout(timeoutId)
-        timeoutId = setTimeout(() => fn.apply(this, args), ms)
-    }
-}
-
-const IDLE_TIME = 60 // 60 seconds
 
 export const MainEditor = () => {
     const dispatch = useDispatch<AppDispatch>()
-    const { filename: urlFilename } = useParams()
-    const navigate = useNavigate()
     const { githubToken, loading, gistId } = useSelector((state: RootState) => state.gist)
+    const charLimit = Number(import.meta.env.VITE_GLOBAL_ENCRYPTED_CHAR_COUNT) || 2000
 
-    const [filename, setFilename] = React.useState(urlFilename || 'Untitled')
-    const [isSaving, setIsSaving] = React.useState(false)
-    const [needsToken, setNeedsToken] = React.useState(false)
-    const [payloadSize, setPayloadSize] = React.useState(0)
-    const [_timeLeft, setTimeLeft] = React.useState(IDLE_TIME)
-    const [count, setCount] = React.useState({
-        chars: 0, words: 0
-    })
-
-    // BUG-006: Track the timestamp of the last successful save to prevent race conditions
-    const lastSaveTimestamp = React.useRef(0)
-    // Protection States
-    const [isPasswordProtected, setIsPasswordProtected] = React.useState(false)
-    const [isLocked, setIsLocked] = React.useState(false)
+    // --- State & Logic Hooks ---
+    const [editorInstance, setEditorInstance] = React.useState<any>(null)
     const [isSetupModalOpen, setIsSetupModalOpen] = React.useState(false)
+    const [isPasswordProtected, setIsPasswordProtected] = React.useState(false)
     const [salt, setSalt] = React.useState<string | null>(null)
 
+    // Pass editorInstance and isLocked to the custom state hook
+    const { isLocked, setIsLocked, timeLeft } = useIdleLock(isPasswordProtected)
+    const {
+        filename, setFilename,
+        isSaving,
+        needsToken,
+        payloadSize,
+        count, setCount,
+        keyRef,
+        saveChanges,
+        debouncedSave
+    } = useEditorState(editorInstance, isLocked, isPasswordProtected, salt)
+
+    // Update idle lock's protection status
+    React.useEffect(() => {
+        // Technically useIdleLock could take this as a prop and handle internal effect, 
+        // but for now we sync it here if needed or just pass it in.
+    }, [isPasswordProtected])
+
+    // --- Export Management ---
     const [isExportVerifyOpen, setIsExportVerifyOpen] = React.useState(false)
     const [exportType, setExportType] = React.useState<'docx' | 'txt' | 'pdf' | null>(null)
     const [isVerifyingExport, setIsVerifyingExport] = React.useState(false)
 
-    const keyRef = React.useRef<CryptoKey | null>(null)
-    const isInitialLoad = React.useRef(true)
-    const idleTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-    // --- EXPORT LOGIC ---
     const triggerExport = (type: 'docx' | 'txt' | 'pdf') => {
         if (isPasswordProtected) {
             setExportType(type)
             setIsExportVerifyOpen(true)
         } else {
-            performExport(type)
+            performExportAction(editor, filename, type)
         }
     }
 
@@ -134,71 +113,27 @@ export const MainEditor = () => {
         try {
             const saltBytes = importSalt(salt!)
             const derivedKey = await deriveKeyFromPassword(password, saltBytes)
-            const exportedDerived = await exportKey(derivedKey)
-            const exportedSession = await exportKey(keyRef.current!)
-
-            if (exportedDerived === exportedSession) {
-                performExport(exportType!)
+            const hash = window.location.hash.slice(1)
+            const parsed = JSON.parse(atob(hash))
+            // Attempt to decrypt to verify password
+            const decrypted = await SecureStorage.decryptString(parsed.d, parsed.iv, derivedKey)
+            if (decrypted) {
+                performExportAction(editor, filename, exportType!)
                 setIsExportVerifyOpen(false)
-            } else {
-                alert("Incorrect password")
             }
         } catch (e) {
-            console.error(e)
+            alert("Incorrect password")
         } finally {
             setIsVerifyingExport(false)
         }
     }
 
-    const performExport = async (type: 'docx' | 'txt' | 'pdf') => {
-        if (!editor) {
-            console.error("[Export] Editor instance not found");
-            return;
-        }
-
-        console.log(`[Export] Starting ${type} export...`);
-        const html = editor.getHTML()
-        const text = editor.getText()
-        const date = new Date().toISOString().split('T')[0]
-        const finalFilename = `${filename}_${date}`
-
-        if (type === 'txt') {
-            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
-            saveAs(blob, `${finalFilename}.txt`)
-        } else if (type === 'docx') {
-            const docxBlob = await asBlob(html, {
-                orientation: 'portrait',
-                margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
-            })
-            saveAs(docxBlob as Blob, `${finalFilename}.docx`)
-        } else if (type === 'pdf') {
-            const element = document.querySelector('.ProseMirror')
-            if (element) {
-                try {
-                    const canvas = await html2canvas(element as HTMLElement, {
-                        scale: 2,
-                        useCORS: true,
-                        backgroundColor: '#000000'
-                    })
-
-                    const imgData = canvas.toDataURL('image/png')
-                    if (!imgData || imgData === 'data:,') {
-                        throw new Error("Generated image data is empty or invalid");
-                    }
-
-                    const pdf = new jsPDF('p', 'mm', 'a4')
-                    const imgProps = pdf.getImageProperties(imgData)
-                    const pdfWidth = pdf.internal.pageSize.getWidth()
-                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
-
-                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
-                    pdf.save(`${finalFilename}.pdf`)
-                } catch (error) {
-                    console.error("[Export] PDF generation failed:", error);
-                }
-            }
-        }
-    }
+    // --- Editor Instance ---
+    // We use a ref for debouncedSave to avoid stale closures in Tiptap instance
+    const saveRef = React.useRef(debouncedSave)
+    React.useEffect(() => {
+        saveRef.current = debouncedSave
+    }, [debouncedSave])
 
     const editor = useEditor({
         extensions: [
@@ -214,190 +149,43 @@ export const MainEditor = () => {
             Underline,
             CharacterCount,
             BubbleMenuExtension,
-            TextAlign.configure({
-                types: ['heading', 'paragraph'],
-            }),
-            Table.configure({
-                resizable: true,
-            }),
-            TableRow,
-            TableHeader,
-            TableCell,
-            Subscript,
-            Superscript,
-            TextStyle,
-            Color,
-            FontFamily,
+            TextAlign.configure({ types: ['heading', 'paragraph'] }),
+            Table.configure({ resizable: true }),
+            TableRow, TableHeader, TableCell,
+            Subscript, Superscript,
+            TextStyle, Color, FontFamily,
             TiptapImage.configure({
                 allowBase64: true,
-                HTMLAttributes: {
-                    class: 'editor-image',
-                },
+                HTMLAttributes: { class: 'editor-image' },
             }),
-            CodeBlockLowlight.configure({
-                lowlight,
-            }),
-            Focus.configure({
-                className: 'has-focus',
-                mode: 'all',
-            }),
-            Dropcursor.configure({
-                color: '#8b5cf6',
-                width: 2,
-            }),
+            CodeBlockLowlight.configure({ lowlight }),
+            Focus.configure({ className: 'has-focus', mode: 'all' }),
+            Dropcursor.configure({ color: '#8b5cf6', width: 2 }),
             Gapcursor,
         ],
         content: '',
         onUpdate: ({ editor }) => {
-            if (isInitialLoad.current || isLocked) return
-            resetIdleTimer()
-            debouncedSave(editor.getHTML())
+            if (isLocked) return
+            // Use the current ref to avoid stale closure issues
+            saveRef.current(editor.getHTML())
+
+            setCount({
+                chars: editor.storage.characterCount.characters(),
+                words: editor.storage.characterCount.words()
+            })
         },
     })
 
-    // --- IDLE LOCK LOGIC ---
-    const resetIdleTimer = React.useCallback(() => {
-        if (!isPasswordProtected || isLocked) return
-        setTimeLeft(IDLE_TIME)
-        if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-        idleTimerRef.current = setTimeout(() => {
-            if (isPasswordProtected) setIsLocked(true)
-        }, IDLE_TIME * 1000)
-    }, [isPasswordProtected, isLocked])
-
     React.useEffect(() => {
-        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
-        const handler = () => resetIdleTimer()
+        if (editor) setEditorInstance(editor)
+    }, [editor])
 
-        events.forEach(e => document.addEventListener(e, handler))
-        resetIdleTimer()
-
-        return () => {
-            events.forEach(e => document.removeEventListener(e, handler))
-            if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-        }
-    }, [resetIdleTimer])
-
-    // Countdown effect
-    React.useEffect(() => {
-        if (!isPasswordProtected || isLocked) return
-
-        const interval = setInterval(() => {
-            setTimeLeft(prev => {
-                if (prev <= 1) {
-                    setIsLocked(true)
-                    return IDLE_TIME
-                }
-                return prev - 1
-            })
-        }, 1000)
-
-        return () => clearInterval(interval)
-    }, [isPasswordProtected, isLocked])
-
-    const stateRef = React.useRef({ filename, isPasswordProtected, salt, githubToken, editor, isLocked })
-    React.useEffect(() => {
-        stateRef.current = { filename, isPasswordProtected, salt, githubToken, editor, isLocked }
-    }, [filename, isPasswordProtected, salt, githubToken, editor, isLocked])
-
-    // --- SAVE LOGIC ---
-    const saveChanges = async (html: string, overrides?: { forceProtected?: boolean, forceSalt?: string }) => {
-        const startTimestamp = Date.now();
-        const { filename: currentFilename, isPasswordProtected: currentProtected, salt: currentSalt, githubToken: currentToken, isLocked: currentLocked } = stateRef.current
-
-        const isProtected = overrides?.forceProtected !== undefined ? overrides.forceProtected : currentProtected;
-        const saltToUse = overrides?.forceSalt !== undefined ? overrides.forceSalt : currentSalt;
-
-        if (currentLocked && !overrides?.forceProtected) {
-            console.log("[Save] Blocked: Editor is locked.");
-            return
-        }
-
-        setIsSaving(true)
-        try {
-            if (!keyRef.current) {
-                const newKey = await generateKey()
-                keyRef.current = newKey
-            }
-
-            const compressed = await Compressor.compressGzip(html)
-            const compressedBase64 = Compressor.toBase64(compressed)
-            const encrypted = await encrypt(compressedBase64, keyRef.current!)
-            setPayloadSize(encrypted.data.length)
-
-            let payload: any = {
-                v: 2,
-                iv: encrypted.iv,
-                p: isProtected,
-                s: saltToUse || undefined,
-                fn: currentFilename
-            }
-
-            if (!isProtected) {
-                payload.k = await exportKey(keyRef.current!)
-            }
-
-            if (encrypted.data.length > +import.meta.env.VITE_GLOBAL_ENCRYPTED_CHAR_COUNT) {
-                payload.mode = "gist"
-                const resultAction = await dispatch(saveToGist({
-                    content: encrypted.data,
-                    token: currentToken || "",
-                    gistId: gistId
-                }))
-
-                if (saveToGist.fulfilled.match(resultAction)) {
-                    payload.gid = resultAction.payload
-                    setNeedsToken(false)
-                } else {
-                    if (!currentToken) {
-                        setNeedsToken(true)
-                        return
-                    }
-                }
-            } else {
-                setNeedsToken(false)
-                payload.mode = "open"
-                payload.d = encrypted.data
-            }
-
-            const finalState = stateRef.current;
-            if (startTimestamp < lastSaveTimestamp.current) return;
-            if (!isProtected && finalState.isPasswordProtected) return;
-
-            const newHash = btoa(JSON.stringify(payload))
-            const cleanFilename = currentFilename.trim().replace(/\s+/g, '-')
-
-            if (!isLocked || overrides?.forceProtected) {
-                navigate(`/${cleanFilename}#${newHash}`, { replace: true })
-                lastSaveTimestamp.current = startTimestamp;
-            }
-        } catch (err) {
-            console.error("[Save] Process failed:", err)
-        } finally {
-            setIsSaving(false)
-        }
-        const characters = editor?.storage.characterCount.characters() || 0
-        const words = editor?.storage.characterCount.words() || 0
-        setCount({ chars: characters, words: words })
-    }
-
-    const saveRef = React.useRef(saveChanges)
-    saveRef.current = saveChanges
-    const debouncedSave = React.useMemo(() => debounce((html: string) => saveRef.current(html), 800), [])
-
-    React.useEffect(() => {
-        document.title = `${filename} - Obscura`
-    }, [filename])
-
-    // --- INIT LOGIC ---
+    // --- Initialization Logic ---
     React.useEffect(() => {
         const init = async () => {
             try {
                 const hash = window.location.hash.slice(1)
-                if (!hash) {
-                    isInitialLoad.current = false
-                    return
-                }
+                if (!hash) return
 
                 const parsed = JSON.parse(atob(hash))
                 setIsPasswordProtected(!!parsed.p)
@@ -421,23 +209,17 @@ export const MainEditor = () => {
 
                 if (!encryptedData) return
                 if (keyRef.current) {
-                    const decryptedBase64 = await decrypt(encryptedData, parsed.iv, keyRef.current)
-                    const html = await Compressor.decompressGzip(Compressor.fromBase64(decryptedBase64))
+                    const html = await SecureStorage.decryptString(encryptedData, parsed.iv, keyRef.current)
                     if (editor) editor.commands.setContent(html)
                 }
             } catch (error) {
                 console.error("Init failed:", error)
-            } finally {
-                isInitialLoad.current = false
             }
-            const characters = editor?.storage.characterCount.characters() || 0
-            const words = editor?.storage.characterCount.words() || 0
-            setCount({ chars: characters, words: words })
         }
         if (editor) init()
     }, [editor])
 
-    // --- ACTIONS ---
+    // --- Auth Actions ---
     const handleUnlock = async (password: string) => {
         try {
             const hash = window.location.hash.slice(1)
@@ -456,42 +238,38 @@ export const MainEditor = () => {
             }
 
             if (!encryptedData) return false
-            const decryptedBase64 = await decrypt(encryptedData, parsed.iv, key)
-            const html = await Compressor.decompressGzip(Compressor.fromBase64(decryptedBase64))
+            const html = await SecureStorage.decryptString(encryptedData, parsed.iv, key)
 
             keyRef.current = key
             if (editor) editor.commands.setContent(html)
             setIsLocked(false)
-            setTimeLeft(IDLE_TIME)
             return true
         } catch (e) {
-            console.error("Unlock failed:", e)
             return false
         }
     }
 
     const handleSetupComplete = async (password: string) => {
-        const newSalt = generateSalt()
-        const key = await deriveKeyFromPassword(password, newSalt)
+        const derivedSalt = importSalt(exportSalt(window.crypto.getRandomValues(new Uint8Array(16))))
+        const key = await deriveKeyFromPassword(password, derivedSalt)
         keyRef.current = key
-        setSalt(exportSalt(newSalt))
+        setSalt(exportSalt(derivedSalt))
         setIsPasswordProtected(true)
         setIsSetupModalOpen(false)
 
         if (editor) {
-            const exported = exportSalt(newSalt)
-            saveChanges(editor.getHTML(), { forceProtected: true, forceSalt: exported })
+            saveChanges(editor.getHTML(), { forceProtected: true, forceSalt: exportSalt(derivedSalt) })
             setIsLocked(true)
         }
     }
 
-    // const toggleLock = () => {
-    //     if (isPasswordProtected) {
-    //         setIsLocked(true)
-    //     } else {
-    //         setIsSetupModalOpen(true)
-    //     }
-    // }
+    const toggleLock = () => {
+        if (isPasswordProtected) {
+            setIsLocked(true)
+        } else {
+            setIsSetupModalOpen(true)
+        }
+    }
 
     const setLink = () => {
         const url = window.prompt('URL')
@@ -500,21 +278,13 @@ export const MainEditor = () => {
 
     return (
         <div className="editor-container">
-            <div className="export-bar">
-                <div className="export-group-label">
-                    <Download size={14} />
-                    <span style={{ fontSize: '8px', fontWeight: 700 }}>EXPORT</span>
-                </div>
-                <button className="export-btn" onClick={() => triggerExport('docx')} title="Export as DOCX">
-                    <FileType size={16} />
-                </button>
-                <button className="export-btn" onClick={() => triggerExport('pdf')} title="Export as PDF">
-                    <FileIcon size={16} />
-                </button>
-                <button className="export-btn" onClick={() => triggerExport('txt')} title="Export as TXT">
-                    <Baseline size={16} />
-                </button>
-            </div>
+            {/* 
+                Responsive Components:
+                ExportBar and EditorToolbar handle their own mobile layouts via CSS.
+            */}
+            <ExportBar
+                onTriggerExport={triggerExport}
+            />
 
             <EditorToolbar editor={editor} filename={filename} setFilename={setFilename} />
 
@@ -522,7 +292,7 @@ export const MainEditor = () => {
                 <EditorContent editor={editor} />
             </div>
 
-            {/* --- MODALS --- */}
+            {/* --- Modals --- */}
             {(isSetupModalOpen && !isLocked) && (
                 <SetupPasswordModal
                     onComplete={handleSetupComplete}
@@ -530,12 +300,14 @@ export const MainEditor = () => {
                 />
             )}
 
-            {isLocked && (
-                <LockScreen
-                    onUnlock={handleUnlock}
-                />
-            )}
+            {isLocked && <LockScreen onUnlock={handleUnlock} />}
 
+            {/* Countdown indicator for locked state could be added here if needed, using timeLeft */}
+            {isPasswordProtected && !isLocked && timeLeft < 10 && (
+                <div style={{ position: 'fixed', bottom: '100px', left: '24px', opacity: 0.5, fontSize: '10px' }}>
+                    Locking in {timeLeft}s...
+                </div>
+            )}
             {isExportVerifyOpen && (
                 <ExportVerifyModal
                     isOpen={isExportVerifyOpen}
@@ -545,7 +317,7 @@ export const MainEditor = () => {
                 />
             )}
 
-            {/* Bubble Menu */}
+            {/* --- Bubble Menu & HUDs --- */}
             {editor && (
                 <BubbleMenu editor={editor} className="bubble-menu glass">
                     <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'active' : ''}><Bold size={16} /></button>
@@ -565,71 +337,32 @@ export const MainEditor = () => {
                 </BubbleMenu>
             )}
 
-            {/* Storage HUD */}
-            <div className={`joint-storage-hud glass ${(payloadSize > +import.meta.env.VITE_GLOBAL_ENCRYPTED_CHAR_COUNT || needsToken) ? 'visible' : ''} ${needsToken ? 'pulse-red' : ''}`}>
-                <div className="hud-status">
-                    {loading ? (
-                        <Loader2 size={14} className="animate-spin text-blue-400" />
-                    ) : gistId ? (
-                        <Github size={14} className="text-blue-400" />
-                    ) : (
-                        <Terminal size={14} className="text-purple-400" />
-                    )}
-                    <span>{loading ? 'Syncing...' : gistId ? 'Gist Sync Active' : 'Provider Fallback'}</span>
-                </div>
+            {/* Status HUDs */}
+            <div className="editor-status-huds">
+                <StatsBubble
+                    count={count}
+                    isSaving={isSaving}
+                    loading={loading}
+                    isPasswordProtected={isPasswordProtected}
+                    timeLeft={timeLeft}
+                    onToggleLock={toggleLock}
+                />
 
-                <div className={`token-area ${githubToken ? 'has-content' : ''}`}>
-                    <input
-                        type="password"
-                        placeholder={needsToken ? "PERSONAL TOKEN REQUIRED" : "Use custom PAT..."}
-                        value={githubToken || ''}
-                        onChange={(e) => dispatch(setGithubToken(e.target.value))}
-                    />
-                    {githubToken ? (
-                        <CheckCircle2 size={14} className="tick-icon" />
-                    ) : (
-                        <Github size={14} className="opacity-40" />
-                    )}
-                </div>
+                <StorageHUD
+                    payloadSize={payloadSize}
+                    needsToken={needsToken}
+                    loading={loading}
+                    gistId={gistId}
+                    githubToken={githubToken}
+                    charLimit={charLimit}
+                />
             </div>
 
-            {/* Status Footer */}
             <div className="editor-footer glass">
                 <div className="footer-section">
                     <CheckCircle2 size={12} className={isSaving ? 'animate-pulse text-accent' : 'text-green-400'} />
                     <span>{isSaving ? 'Syncing...' : 'Encrypted & Saved'}</span>
                 </div>
-            </div>
-
-            {/* Stats Bubble */}
-            <div className="stats-bubble glass">
-                <div className="stats-item">
-                    <span className="stats-value">{count.words}</span>
-                    <span className="stats-label">Words</span>
-                </div>
-                <div className="stats-item">
-                    <span className="stats-value">{count.chars}</span>
-                    <span className="stats-label">Chars</span>
-                </div>
-
-                {/* {(isPasswordProtected || isSaving || loading) && (
-                    <div className="stats-item" style={{ marginLeft: '12px', paddingLeft: '12px', borderLeft: '1px solid var(--border)' }}>
-                        {isSaving || loading ? (
-                            <Loader2 size={16} className="animate-spin text-blue-400" />
-                        ) : (
-                            <div className="flex items-center gap-2 cursor-pointer" onClick={toggleLock}>
-                                <Lock size={16} className="text-purple-400" />
-                                {timeLeft > 0 && <span className="stats-label" style={{ fontSize: '9px' }}>{timeLeft}s</span>}
-                            </div>
-                        )}
-                    </div>
-                )} */}
-
-                {/* {!isPasswordProtected && !loading && !isSaving && (
-                    <div className="stats-item" style={{ marginLeft: '4px' }}>
-                        <Unlock size={16} className="text-green-400/50 cursor-pointer" onClick={toggleLock} />
-                    </div>
-                )} */}
             </div>
         </div>
     )

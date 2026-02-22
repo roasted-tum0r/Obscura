@@ -30,7 +30,9 @@ import {
     Superscript as SuperscriptIcon,
     Palette,
     Image as ImageIcon,
-    FileCode
+    FileCode,
+    Menu,
+    X
 } from 'lucide-react'
 
 interface EditorToolbarProps {
@@ -39,9 +41,21 @@ interface EditorToolbarProps {
     setFilename: (name: string) => void
 }
 
-export const EditorToolbar = ({ editor, filename, setFilename }: EditorToolbarProps) => {
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = React.useState(window.innerWidth <= 768)
+    React.useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth <= 768)
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
+    return isMobile
+}
+
+export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, filename, setFilename }) => {
+    const [isOpen, setIsOpen] = React.useState(true)
     const [activeGroup, setActiveGroup] = React.useState<string | null>(null)
     const [hoveredGrid, setHoveredGrid] = React.useState({ r: 0, c: 0 })
+    const isMobile = useIsMobile()
 
     if (!editor) return null
 
@@ -228,7 +242,7 @@ export const EditorToolbar = ({ editor, filename, setFilename }: EditorToolbarPr
                 {
                     icon: FileCode,
                     title: 'Pre-formatted',
-                    action: () => editor.chain().focus().setHeading({ level: 1 }).run(), // Placeholder for something else?
+                    action: () => editor.chain().focus().setHeading({ level: 1 }).run(),
                     isActive: () => false,
                 },
             ]
@@ -284,87 +298,176 @@ export const EditorToolbar = ({ editor, filename, setFilename }: EditorToolbarPr
     ]
 
     return (
-        <div className="floating-toolbar" onMouseLeave={() => setHoveredGrid({ r: 0, c: 0 })}>
-            <div className="toolbar-filename">
-                <input
-                    value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
-                    placeholder="Untitled"
-                />
-            </div>
-            <div className="divider-h" />
-            {items.map((item, index) => {
-                if ('isGroup' in item && item.isGroup) {
-                    const CurrentIcon = (item as any).iconActive || item.icon
-                    return (
-                        <div
-                            key={index}
-                            className={`toolbar-group ${activeGroup === item.id ? 'active' : ''}`}
-                            onMouseEnter={() => setActiveGroup(item.id!)}
-                            onMouseLeave={() => setActiveGroup(null)}
-                        >
-                            <button className="toolbar-btn" title={item.title}>
-                                <CurrentIcon size={18} />
-                                <ChevronRight size={10} className="absolute bottom-1 right-1 opacity-40" />
-                            </button>
-                            <div className="toolbar-submenu shadow-xl">
-                                {item.children?.map((child: any, cIdx: number) => {
-                                    if (child.isTableGrid) {
-                                        return (
-                                            <div key={cIdx} className="table-picker-container">
-                                                <div className="table-picker-label">
-                                                    {hoveredGrid.r > 0 ? `${hoveredGrid.r} x ${hoveredGrid.c}` : 'Insert Table'}
-                                                </div>
-                                                <div className="table-picker-grid">
-                                                    {Array.from({ length: 100 }).map((_, i) => {
-                                                        const r = Math.floor(i / 10) + 1
-                                                        const c = (i % 10) + 1
-                                                        const isSelected = r <= hoveredGrid.r && c <= hoveredGrid.c
-                                                        return (
-                                                            <div
-                                                                key={i}
-                                                                className={`table-picker-cell ${isSelected ? 'selected' : ''}`}
-                                                                onMouseEnter={() => setHoveredGrid({ r, c })}
-                                                                onClick={() => insertTable(r, c)}
-                                                            />
-                                                        )
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )
-                                    }
-                                    return (
-                                        <button
-                                            key={cIdx}
-                                            onClick={() => {
-                                                child.action()
-                                                setActiveGroup(null)
-                                            }}
-                                            className={`submenu-btn ${child.isActive() ? 'active' : ''}`}
-                                            title={child.title}
-                                        >
-                                            <child.icon size={16} />
-                                            <span>{child.title}</span>
-                                        </button>
-                                    )
-                                })}
+        <>
+            <button 
+                className={`toolbar-burger glass ${isOpen ? 'active' : ''}`}
+                onClick={() => {
+                    if (isOpen) setActiveGroup(null)
+                    setIsOpen(!isOpen)
+                }}
+            >
+                {isOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
+            <div 
+                className={`floating-toolbar ${isOpen ? 'toolbar-open' : ''}`} 
+                data-layout={isMobile ? "mobile" : "desktop"}
+                onMouseLeave={() => setHoveredGrid({ r: 0, c: 0 })}
+            >
+                {isMobile ? (
+                    <>
+                        <div className="toolbar-bubble glass">
+                            <div className="toolbar-scroll-container">
+                                {items.map((item, index) => (
+                                    <ToolbarItem
+                                        key={index}
+                                        item={item}
+                                        activeGroup={activeGroup}
+                                        setActiveGroup={setActiveGroup}
+                                        isOpen={isOpen}
+                                        hoveredGrid={hoveredGrid}
+                                        setHoveredGrid={setHoveredGrid}
+                                        insertTable={insertTable}
+                                    />
+                                ))}
                             </div>
                         </div>
-                    )
-                }
+                        <div className="filename-bubble glass">
+                            <div className="toolbar-filename">
+                                <input
+                                    value={filename}
+                                    onChange={(e) => setFilename(e.target.value)}
+                                    placeholder="Untitled"
+                                />
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="filename-bubble glass">
+                            <div className="toolbar-filename">
+                                <input
+                                    value={filename}
+                                    onChange={(e) => setFilename(e.target.value)}
+                                    placeholder="Untitled"
+                                />
+                            </div>
+                        </div>
+                        <div className="toolbar-bubble glass">
+                            <div className="toolbar-scroll-container">
+                                {items.map((item, index) => (
+                                    <ToolbarItem
+                                        key={index}
+                                        item={item}
+                                        activeGroup={activeGroup}
+                                        setActiveGroup={setActiveGroup}
+                                        isOpen={isOpen}
+                                        hoveredGrid={hoveredGrid}
+                                        setHoveredGrid={setHoveredGrid}
+                                        insertTable={insertTable}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+        </>
+    )
+}
 
-                const ItemIcon = (item as any).icon
-                return (
-                    <button
-                        key={index}
-                        onClick={(item as any).action}
-                        className={`toolbar-btn ${(item as any).isActive() ? 'active' : ''}`}
-                        title={item.title}
-                    >
-                        <ItemIcon size={18} />
-                    </button>
-                )
-            })}
-        </div>
+interface ToolbarItemProps {
+    item: any
+    activeGroup: string | null
+    setActiveGroup: (id: string | null) => void
+    isOpen: boolean
+    hoveredGrid: { r: number; c: number }
+    setHoveredGrid: (grid: { r: number; c: number }) => void
+    insertTable: (r: number, c: number) => void
+}
+
+const ToolbarItem: React.FC<ToolbarItemProps> = ({ 
+    item, 
+    activeGroup, 
+    setActiveGroup, 
+    isOpen, 
+    hoveredGrid, 
+    setHoveredGrid, 
+    insertTable 
+}) => {
+    if ('isGroup' in item && item.isGroup) {
+        const CurrentIcon = item.icon
+        return (
+            <div
+                className={`toolbar-group ${activeGroup === item.id ? 'active' : ''}`}
+                onMouseEnter={() => !isOpen && setActiveGroup(item.id!)}
+                onMouseLeave={() => !isOpen && setActiveGroup(null)}
+            >
+                <button 
+                    className={`toolbar-btn ${activeGroup === item.id ? 'active' : ''}`}
+                    title={item.title}
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        setActiveGroup(activeGroup === item.id ? null : item.id!)
+                    }}
+                >
+                    <CurrentIcon size={18} />
+                    <ChevronRight size={10} className="absolute bottom-1 right-1 opacity-40" />
+                </button>
+                <div className="toolbar-submenu shadow-xl">
+                    {item.children?.map((child: any, cIdx: number) => {
+                        if (child.isTableGrid) {
+                            return (
+                                <div key={cIdx} className="table-picker-container">
+                                    <div className="table-picker-label">
+                                        {hoveredGrid.r > 0 ? `${hoveredGrid.r} x ${hoveredGrid.c}` : 'Insert Table'}
+                                    </div>
+                                    <div className="table-picker-grid">
+                                        {Array.from({ length: 100 }).map((_, i) => {
+                                            const r = Math.floor(i / 10) + 1
+                                            const c = (i % 10) + 1
+                                            const isSelected = r <= hoveredGrid.r && c <= hoveredGrid.c
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    className={`table-picker-cell ${isSelected ? 'selected' : ''}`}
+                                                    onMouseEnter={() => setHoveredGrid({ r, c })}
+                                                    onClick={() => insertTable(r, c)}
+                                                />
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            )
+                        }
+                        return (
+                            <button
+                                key={cIdx}
+                                onClick={() => {
+                                    child.action()
+                                    setActiveGroup(null)
+                                }}
+                                className={`submenu-btn ${child.isActive() ? 'active' : ''}`}
+                                title={child.title}
+                            >
+                                <child.icon size={16} />
+                                <span>{child.title}</span>
+                            </button>
+                        )
+                    })}
+                </div>
+            </div>
+        )
+    }
+
+    const ItemIcon = item.icon
+    return (
+        <button
+            onClick={item.action}
+            className={`toolbar-btn ${item.isActive() ? 'active' : ''}`}
+            title={item.title}
+        >
+            <ItemIcon size={18} />
+        </button>
     )
 }

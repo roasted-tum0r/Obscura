@@ -56,6 +56,17 @@ body {
   flex-direction: column;
 }
 
+/* --- Responsive Utility Classes --- */
+.mobile-only-flex {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-only-flex {
+    display: flex;
+  }
+}
+
 /* TipTap Editor Styling */
 .ProseMirror {
   outline: none !important;
@@ -208,12 +219,8 @@ body {
   background: linear-gradient(to right, rgba(139, 92, 246, 0.1), transparent);
 }
 
-/* Joint Storage HUD (Top-Right) */
+/* Joint Storage HUD (Inside Container) */
 .joint-storage-hud {
-  position: fixed;
-  top: 24px;
-  right: 24px;
-  z-index: 200;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -225,8 +232,9 @@ body {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  transform: translateY(-100px);
+  transform: translateY(-20px);
   opacity: 0;
+  pointer-events: none;
 }
 
 .joint-storage-hud.visible {
@@ -273,12 +281,8 @@ body {
   filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.4));
 }
 
-/* Stats Bubble (Bottom-Left) */
+/* Stats Bubble (Inside Container) */
 .stats-bubble {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  z-index: 1000;
   padding: 10px 24px;
   border-radius: 50px;
   display: flex;
@@ -316,23 +320,140 @@ body {
   opacity: 0.8;
 }
 
-/* Vertical Floating Toolbar */
+/* Status HUDs Container */
+.editor-status-huds {
+  position: fixed;
+  bottom: 10px;
+  left: 300px;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.editor-status-huds > * {
+  pointer-events: all;
+}
+
+/* --- FLOATING TOOLBAR (CENTRALIZED CONTROL) --- */
 .floating-toolbar {
   position: fixed;
-  top: 50%;
-  left: 20px;
-  transform: translateY(-50%);
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
+  gap: 12px;
+  /* CRITICAL: Use discrete properties (left, bottom) instead of transform.
+     This ensures that fixed submenus escape overflow-auto ancestors. */
+  transition: opacity 0.4s, left 0.4s, bottom 0.4s, visibility 0.4s;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.floating-toolbar.toolbar-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+}
+
+/* DESKTOP LAYOUT (Left Side) */
+.floating-toolbar[data-layout="desktop"] {
+  top: 0;
+  bottom: 0;
+  margin: auto 0;
+  height: fit-content;
+  max-height: 90vh;
+  left: -200px; /* Hidden off-left */
+}
+
+.floating-toolbar[data-layout="desktop"].toolbar-open {
+  left: 1.25vw;
+}
+
+/* MOBILE LAYOUT (Bottom) */
+.floating-toolbar[data-layout="mobile"] {
+  bottom: -250px; /* Hidden off-bottom */
+  left: 5vw;
+  right: 5vw;
+  max-width: 90vw;
+  gap: 8px;
+}
+
+.floating-toolbar[data-layout="mobile"].toolbar-open {
+  bottom: 2vh;
+}
+
+/* BUBBLE STYLING */
+.filename-bubble,
+.toolbar-bubble {
   border-radius: 20px;
-  background: #0d0d10;
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  display: flex;
+  flex-direction: column;
+  /* CRITICAL: overflow: visible allows submenus to pop out. 
+     Using hidden here was clipping the fixed/absolute submenus. */
+  overflow: visible; 
+}
+
+/* Desktop Bubble Constraints */
+[data-layout="desktop"] .filename-bubble {
+  width: 140px; /* Wider filename area for desktop */
+}
+
+[data-layout="desktop"] .toolbar-bubble {
+  width: 54px; 
+  align-self: flex-start;
+  min-height: 0; 
+  flex: 1; 
+  overflow: hidden; /* Allow internal scrolling, fixed submenus will still breakout */
+}
+
+/* Mobile Bubble Constraints */
+[data-layout="mobile"] .toolbar-bubble {
+  width: 100%;
+  /* Removed max-height and overflow-y:auto to restore nests visibility */
+}
+
+.filename-bubble {
+  padding: 10px 16px;
+  justify-content: center;
+}
+
+.toolbar-bubble {
+  padding: 8px 6px;
+}
+
+/* Scroll container inside toolbar */
+.toolbar-scroll-container {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 12px;
+  overflow-y: auto;
+  overflow-x: visible; 
+  padding: 5px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-layout="mobile"] .toolbar-scroll-container {
+  flex-direction: row;
+  flex-wrap: wrap; /* Enable 2 lines */
+  justify-content: center;
+  overflow-x: visible;
+  overflow-y: visible;
+  width: 100%;
+  padding: 8px 5px;
+  gap: 8px; /* Tighter gap for wrapped layout */
+}
+
+.toolbar-scroll-container::-webkit-scrollbar {
+  display: none;
 }
 
 .toolbar-btn {
@@ -429,7 +550,7 @@ body {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   animation: scale-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -512,44 +633,74 @@ body {
   flex-direction: column;
 }
 
+/* Breakout Submenus (Unified Control) */
 .toolbar-submenu {
-  position: absolute;
-  left: 100%;
-  top: 0;
-  background: rgba(15, 15, 15, 0.95);
-  backdrop-filter: blur(20px);
+  position: fixed;
+  background: rgba(13, 13, 16, 0.98);
+  backdrop-filter: blur(30px);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px;
+  border-radius: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   box-shadow: var(--shadow-lg);
-  z-index: 1000;
+  z-index: 5000;
   opacity: 0;
   pointer-events: none;
-  transform: translateX(10px);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  margin-left: 8px;
-  /* Buffer space */
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 200px;
+  max-height: calc(100vh - 160px); /* DO NOT FIT window height? Scroller! */
+  overflow-y: auto;
+  scrollbar-width: none;
+  visibility: hidden;
 }
 
-/* Invisible bridge to prevent menu from closing when moving mouse from btn to submenu */
+.toolbar-submenu::-webkit-scrollbar {
+  display: none;
+}
+
+/* Desktop Submenu Alignment (To the right of the bubble) */
+[data-layout="desktop"] .toolbar-submenu {
+  left: calc(1.25vw + 64px);
+  top: 50%;
+  transform: translateY(-50%) translateX(10px);
+}
+
+[data-layout="desktop"] .toolbar-group:hover .toolbar-submenu,
+[data-layout="desktop"] .toolbar-group.active .toolbar-submenu {
+  opacity: 1;
+  pointer-events: all;
+  transform: translateY(-50%) translateX(0);
+  visibility: visible;
+}
+
+/* Mobile Submenu Alignment (Centered in viewport) */
+[data-layout="mobile"] .toolbar-submenu {
+  left: 50%;
+  bottom: 180px; /* Higher position to avoid overlap with 2-line toolbar */
+  top: auto;
+  transform: translateX(-50%) translateY(20px);
+  /* Use extremely high z-index to stay above all other bubbles */
+  z-index: 9999; 
+}
+
+[data-layout="mobile"] .toolbar-group.active .toolbar-submenu {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+}
+
+/* Updated Hover Bridge for Fixed positioning */
 .toolbar-submenu::before {
   content: '';
   position: absolute;
-  left: -15px;
+  left: -40px;
   top: 0;
   bottom: 0;
-  width: 15px;
+  width: 40px;
   background: transparent;
-}
-
-.toolbar-group:hover .toolbar-submenu,
-.toolbar-group.active .toolbar-submenu {
-  opacity: 1;
-  pointer-events: all;
-  transform: translateX(0);
 }
 
 .submenu-btn {
@@ -781,12 +932,42 @@ body {
   font-family: var(--font-mono);
 }
 
-.input-field {
-  width: 100%;
-  height: 60px;
-  background: rgba(255, 255, 255, 0.05);
+/* --- GLOBAL TOOLBAR BURGER --- */
+.toolbar-burger {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 2000;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--border);
-  border-radius: 20px;
+}
+
+.toolbar-burger.active {
+  background: var(--accent);
+  border-color: var(--accent-hover);
+}
+
+.toolbar-burger:active {
+  transform: scale(0.9);
+}
+
+.mobile-burger.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.input-field {
   padding: 0 24px;
   color: #fff;
   font-family: inherit;
@@ -802,20 +983,21 @@ body {
 }
 
 .toolbar-filename {
-  padding: 8px 12px;
+  padding: 2px 4px;
   width: 100%;
 }
 
 .toolbar-filename input {
-  width: 100%;
   background: transparent;
   border: none;
-  color: var(--text-main);
+  color: #fff;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.1em;
+  width: 100%;
   outline: none;
+  opacity: 0.8;
   text-align: center;
 }
 
@@ -971,4 +1153,71 @@ body {
 
 .font-bold {
   font-weight: 700;
+}
+
+/* --- RESPONSIVE DESIGN (MOBILE) ---
+   These styles target screens smaller than 768px (phones & tablets).
+   It fixes the overlapping UI issues seen in the mobile viewport.
+*/
+@media (max-width: 768px) {
+
+  /* -- Reduce global padding for the main editor content -- */
+  .ProseMirror {
+    padding: 60px 16px 180px 16px;
+    font-size: 1.1rem;
+    max-width: 100%;
+  }
+
+  .filename-header {
+    padding: 24px 16px 8px 16px;
+    gap: 12px;
+  }
+
+  .filename-input {
+    font-size: 1.5rem;
+  }
+
+  .toolbar-burger {
+    display: flex;
+  }
+
+  /* Redundant Mobile Toolbar Styles Removed (Now handled by data-layout) */
+
+  /* Redundant Mobile Submenu Styles Removed (Now handled by data-layout) */
+
+  .joint-storage-hud {
+    transform: none !important;
+    width: auto;
+  }
+
+  .editor-status-huds {
+    top: 16px;
+    left: 16px;
+    right: 76px; /* Space for burger (48px width + margins) */
+    bottom: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    pointer-events: none; /* Container itself shouldn't block */
+  }
+
+  .editor-status-huds::-webkit-scrollbar {
+    display: none;
+  }
+
+  .stats-bubble {
+    padding: 8px 16px;
+    white-space: nowrap;
+    min-width: max-content;
+  }
+
+  .stats-value {
+    font-size: 18px;
+  }
+
+  .editor-footer {
+    display: none;
+  }
 }
