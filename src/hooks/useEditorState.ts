@@ -131,7 +131,12 @@ export const useEditorState = (
 
     return {
         filename: settings.fileName,
-        setFilename: (name: string) => dispatch(updateSettings({ fileName: name })),
+        setFilename: (name: string) => {
+            dispatch(updateSettings({ fileName: name }));
+            const cleanName = name.trim().replace(/\s+/g, '-');
+            const currentHash = window.location.hash;
+            navigate(`/${cleanName}${currentHash}`, { replace: true });
+        },
         isSaving, setIsSaving,
         needsToken, setNeedsToken,
         payloadSize, setPayloadSize,

@@ -42,6 +42,7 @@ import { SetupPasswordModal } from "./SetupPasswordModal"
 import { LockScreen } from "./LockScreen"
 import { VerifyPasswordModal } from "./VerifyPasswordModal"
 import { LinkModal } from "./LinkModal"
+import { TextPromptModal } from "./TextPromptModal"
 import { ExportVerifyModal } from "./ExportVerifyModal"
 import { ExportBar, performExportAction } from "./ExportBar"
 import { useIdleLock } from "../hooks/useIdleLock"
@@ -53,10 +54,10 @@ import { setSettings, updateSettings } from "../store/settingsSlice"
 import {
     Bold,
     Italic,
+    Underline as UnderlineIcon,
     Highlighter,
     Heading1,
     Heading2,
-    Baseline,
     Code,
     Link as LinkIcon,
     AlignLeft,
@@ -74,6 +75,14 @@ export const MainEditor = () => {
     const [isSetupModalOpen, setIsSetupModalOpen] = React.useState(false)
     const [isVerifyModalOpen, setIsVerifyModalOpen] = React.useState(false)
     const [isLinkModalOpen, setIsLinkModalOpen] = React.useState(false)
+    const [promptConfig, setPromptConfig] = React.useState<{
+        title: string,
+        description?: string,
+        placeholder?: string,
+        initialValue?: string,
+        icon?: React.ReactNode,
+        callback: (val: string | null) => void
+    } | null>(null)
 
     // Pass editorInstance and isLocked to the custom state hook
     const { isLocked, setIsLocked, timeLeft } = useIdleLock(settings.mode === "protected")
@@ -439,6 +448,19 @@ export const MainEditor = () => {
         setIsLinkModalOpen(false)
     }
 
+    const handlePromptSave = (val: string) => {
+        if (promptConfig) {
+            promptConfig.callback(val)
+            setPromptConfig(null)
+        }
+    }
+
+    const triggerPrompt = (config: Omit<NonNullable<typeof promptConfig>, 'callback'>): Promise<string | null> => {
+        return new Promise((resolve) => {
+            setPromptConfig({ ...config, callback: resolve })
+        })
+    }
+
     return (
         <div className="editor-container">
             <ExportBar
@@ -457,6 +479,7 @@ export const MainEditor = () => {
                 timeLeft={timeLeft}
                 onToggleLock={toggleLock}
                 count={count}
+                triggerPrompt={triggerPrompt}
             />
 
             <div className="editor-content-wrapper">
@@ -490,6 +513,21 @@ export const MainEditor = () => {
                 />
             )}
 
+            {promptConfig && (
+                <TextPromptModal
+                    title={promptConfig.title}
+                    description={promptConfig.description}
+                    placeholder={promptConfig.placeholder}
+                    initialValue={promptConfig.initialValue}
+                    icon={promptConfig.icon}
+                    onSave={handlePromptSave}
+                    onClose={() => {
+                        promptConfig.callback(null)
+                        setPromptConfig(null)
+                    }}
+                />
+            )}
+
             {isExportVerifyOpen && (
                 <ExportVerifyModal
                     isOpen={isExportVerifyOpen}
@@ -504,7 +542,7 @@ export const MainEditor = () => {
                 <BubbleMenu editor={editor} className="bubble-menu glass">
                     <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'active' : ''}><Bold size={16} /></button>
                     <button onClick={() => editor.chain().focus().toggleItalic().run()} className={editor.isActive('italic') ? 'active' : ''}><Italic size={16} /></button>
-                    <button onClick={() => editor.chain().focus().toggleUnderline().run()} className={editor.isActive('underline') ? 'active' : ''}><Baseline size={16} /></button>
+                    <button onClick={() => editor.chain().focus().toggleUnderline().run()} className={editor.isActive('underline') ? 'active' : ''}><UnderlineIcon size={16} /></button>
                     <button onClick={() => editor.chain().focus().toggleHighlight().run()} className={editor.isActive('highlight') ? 'active' : ''}><Highlighter size={16} /></button>
                     <div className="divider" />
                     <button onClick={() => editor.chain().focus().setTextAlign('left').run()} className={editor.isActive({ textAlign: 'left' }) ? 'active' : ''}><AlignLeft size={16} /></button>

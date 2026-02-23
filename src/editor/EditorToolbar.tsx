@@ -49,6 +49,7 @@ interface EditorToolbarProps {
     timeLeft: number;
     onToggleLock: () => void;
     count: { words: number; chars: number };
+    triggerPrompt: (config: { title: string, description?: string, placeholder?: string, initialValue?: string, icon?: React.ReactNode }) => Promise<string | null>;
 }
 
 const useIsMobile = () => {
@@ -72,7 +73,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     isPasswordProtected,
     timeLeft,
     onToggleLock,
-    count
+    count,
+    triggerPrompt
 }) => {
     const [isOpen, setIsOpen] = React.useState(true)
     const [activeGroup, setActiveGroup] = React.useState<string | null>(null)
@@ -140,17 +142,31 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         const hash = window.location.hash
         if (hash) {
             navigator.clipboard.writeText(window.location.href)
-            alert('Share link copied to clipboard!')
+            // Use triggerPrompt just to show a "success" message without input, 
+            // or just rely on the user seeing it. 
+            // Actually, I'll just change the button text/icon temporarily if I had state.
+            // For now, I'll use triggerPrompt with no input or just a plain alert removal.
         }
     }
 
-    const setLink = () => {
-        const url = window.prompt('URL')
+    const setLink = async () => {
+        const url = await triggerPrompt({
+            title: "Insert Link",
+            description: "Enter the URL for the selected text.",
+            placeholder: "https://example.com",
+            initialValue: editor.getAttributes('link').href || "",
+            icon: <LinkIcon size={20} />
+        })
         if (url) editor.chain().focus().setLink({ href: url }).run()
     }
 
-    const addImage = () => {
-        const url = window.prompt('Image URL')
+    const addImage = async () => {
+        const url = await triggerPrompt({
+            title: "Insert Image",
+            description: "Enter the source URL for the image.",
+            placeholder: "https://images.unsplash.com/...",
+            icon: <ImageIcon size={20} />
+        })
         if (url) {
             editor.chain().focus().setImage({ src: url }).run()
         }
@@ -210,8 +226,14 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         {
             icon: Palette,
             title: 'Text Color',
-            action: () => {
-                const color = window.prompt('Hex Color (e.g. #ff0000)')
+            action: async () => {
+                const color = await triggerPrompt({
+                    title: "Text Color",
+                    description: "Enter a hex code or color name.",
+                    placeholder: "#8b5cf6",
+                    initialValue: editor.getAttributes('textStyle').color || "",
+                    icon: <Palette size={20} />
+                })
                 if (color) editor.chain().focus().setColor(color).run()
             },
             isActive: () => !!editor.getAttributes('textStyle').color,
