@@ -1,11 +1,12 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Editor } from '@tiptap/react';
-import type { RootState, AppDispatch } from '../store';
 import { saveToGist } from '../store/gistSlice';
+import type { RootState, AppDispatch } from '../store';
 import { SecureStorage } from '../utils/SecureStorage';
-import { generateKey, exportKey } from '../utils/Crypto';
+import { generateKey } from '../utils/Crypto';
+import { updateSettings, setSettings } from '../store/settingsSlice';
 
 const debounce = (fn: Function, ms: number) => {
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -17,95 +18,103 @@ const debounce = (fn: Function, ms: number) => {
 
 export const useEditorState = (
     editor: Editor | null,
-    isLocked: boolean,
-    isPasswordProtected: boolean,
-    salt: string | null
+    isLocked: boolean
 ) => {
     const dispatch = useDispatch<AppDispatch>();
-    const { filename: urlFilename } = useParams();
     const navigate = useNavigate();
     const { githubToken, gistId } = useSelector((state: RootState) => state.gist);
+    const settings = useSelector((state: RootState) => state.settings);
 
-    const [filename, setFilename] = React.useState(urlFilename || 'Untitled');
     const [isSaving, setIsSaving] = React.useState(false);
     const [needsToken, setNeedsToken] = React.useState(false);
     const [payloadSize, setPayloadSize] = React.useState(0);
     const [count, setCount] = React.useState({ chars: 0, words: 0 });
 
-    const keyRef = React.useRef<CryptoKey | null>(null);
+    const innerKeyRef = React.useRef<CryptoKey | null>(null);
+    const outerKeyRef = React.useRef<CryptoKey | null>(null);
     const lastSaveTimestamp = React.useRef(0);
 
     const saveChanges = React.useCallback(async (html: string, overrides?: { forceProtected?: boolean, forceSalt?: string }) => {
         const startTimestamp = Date.now();
-        const isProtected = overrides?.forceProtected !== undefined ? overrides.forceProtected : isPasswordProtected;
-        const saltToUse = overrides?.forceSalt !== undefined ? overrides.forceSalt : salt;
+        const isProtected = overrides?.forceProtected !== undefined ? overrides.forceProtected : settings.mode === "protected";
+        const saltToUse = overrides?.forceSalt !== undefined ? overrides.forceSalt : settings.s;
 
         if (isLocked && !overrides?.forceProtected) return;
 
         setIsSaving(true);
         try {
-            if (!keyRef.current) {
-                keyRef.current = await generateKey();
-            }
-
-            // Use the new generic SecureStorage utility
-            const encrypted = await SecureStorage.encryptString(html, keyRef.current);
-            setPayloadSize(encrypted.data.length);
-
-            let payload: any = {
-                v: 2,
-                iv: encrypted.iv,
-                p: isProtected,
-                s: saltToUse || undefined,
-                fn: filename
-            };
-
-            if (!isProtected) {
-                payload.k = await exportKey(keyRef.current);
-            }
-
-            const charLimit = Number(import.meta.env.VITE_GLOBAL_ENCRYPTED_CHAR_COUNT) || 2000;
-            console.log(`[Save] Payload Size: ${encrypted.data.length}, Limit: ${charLimit}`);
-
-            if (encrypted.data.length > charLimit) {
-                console.log("[Save] Triggering Gist sync...");
-                payload.mode = "gist";
-                const resultAction = await dispatch(saveToGist({
-                    content: encrypted.data,
-                    token: githubToken || "",
-                    gistId: gistId
-                }));
-
-                if (saveToGist.fulfilled.match(resultAction)) {
-                    payload.gid = resultAction.payload;
-                    setNeedsToken(false);
-                    console.log("[Save] Gist sync successful. Gid:", payload.gid);
-                } else {
-                    console.error("[Save] Gist thunk rejected:", resultAction.payload || resultAction.error);
-                    if (!githubToken) {
-                        setNeedsToken(true);
-                        console.warn("[Save] No GitHub token and global fallback failed. Visibility triggered.");
-                        setIsSaving(false);
-                        return;
+            console.log(`[STEP 0] [useEditorState.ts:37] saveChanges: Initiating save. Protected: ${isProtected}`);
+            
+            // 1. Ensure keys exist
+            if (!innerKeyRef.current) {
+                if (isProtected) {
+                    console.warn(`[DEBUG] [useEditorState.ts:42] saveChanges: innerKey missing in PROTECTED mode. No-op or wait for derivation.`);
+                    // In protected mode, we can't just generate a random key.
+                    // However, if we just finished setup, the key should have been set.
+                    if (!overrides?.forceProtected) {
+                         setIsSaving(false);
+                         return;
                     }
                 }
-            } else {
-                setNeedsToken(false);
-                payload.mode = "open";
-                payload.d = encrypted.data;
+                innerKeyRef.current = await generateKey();
+                console.log(`[DEBUG] [useEditorState.ts:51] saveChanges: Generated new random innerKey.`);
+            }
+            if (!outerKeyRef.current) {
+                outerKeyRef.current = await generateKey();
+                console.log(`[DEBUG] [useEditorState.ts:55] saveChanges: Generated new outerKey.`);
             }
 
-            if (startTimestamp < lastSaveTimestamp.current) return;
+            // 2. Multi-layer Encryption (V2)
+            const result = await SecureStorage.v2Encrypt(
+                html,
+                innerKeyRef.current,
+                { ...settings, mode: isProtected ? "protected" : "open", s: saltToUse || "" },
+                outerKeyRef.current,
+                async (encryptedContent: string) => {
+                    console.log(`[STEP 3.1] [useEditorState.ts:54] saveChanges (Gist Callback): Content too large, uploading to Gist.`);
+                    const resultAction = await dispatch(saveToGist({
+                        content: encryptedContent,
+                        token: githubToken || "",
+                        gistId: gistId
+                    }));
 
-            const newHash = btoa(JSON.stringify(payload));
-            const cleanFilename = filename.trim().replace(/\s+/g, '-');
+                    if (saveToGist.fulfilled.match(resultAction)) {
+                        console.log(`[STEP 3.2] [useEditorState.ts:62] saveChanges (Gist Callback): Gist upload successful. Gid: ${resultAction.payload}`);
+                        setNeedsToken(false);
+                        return resultAction.payload as string;
+                    } else {
+                        console.error(`[ERROR] [useEditorState.ts:66] saveChanges (Gist Callback): Gist upload failed.`);
+                        if (!githubToken) setNeedsToken(true);
+                        throw new Error("Gist save failed");
+                    }
+                }
+            );
+
+            const { hash: newHash, settings: newSettings } = result;
+
+            if (startTimestamp < lastSaveTimestamp.current) {
+                console.warn(`[DEBUG] [useEditorState.ts:74] saveChanges: Discarding stale save (timestamp drift).`);
+                return;
+            }
+
+            // Sync Redux with the latest encryption metadata
+            console.log(`[STATE-SYNC] saveChanges: Dispatching setSettings. 
+                Storage: ${newSettings.storageType}
+                D-Length: ${newSettings.d.length}
+                IV: ${newSettings.iv}
+                Gid-IV: ${newSettings.iv_gist}`);
+            dispatch(setSettings(newSettings));
+            console.log(`[STATE-SYNC] saveChanges: Redux dispatch complete.`);
+
+            const cleanFilename = settings.fileName.trim().replace(/\s+/g, '-');
+            console.log(`[STEP 10] [useEditorState.ts:79] saveChanges: Updating URL with new hash.`);
 
             if (!isLocked || overrides?.forceProtected) {
                 navigate(`/${cleanFilename}#${newHash}`, { replace: true });
                 lastSaveTimestamp.current = startTimestamp;
             }
         } catch (err) {
-            console.error("[Save] Process failed:", err);
+            console.error("[Save] V2 Process failed:", err);
         } finally {
             setIsSaving(false);
         }
@@ -116,17 +125,19 @@ export const useEditorState = (
                 words: editor.storage.characterCount.words()
             });
         }
-    }, [filename, isPasswordProtected, salt, githubToken, gistId, isLocked, editor, dispatch, navigate]);
+    }, [settings, githubToken, gistId, isLocked, editor, dispatch, navigate]);
 
     const debouncedSave = React.useMemo(() => debounce((html: string) => saveChanges(html), 800), [saveChanges]);
 
     return {
-        filename, setFilename,
+        filename: settings.fileName,
+        setFilename: (name: string) => dispatch(updateSettings({ fileName: name })),
         isSaving, setIsSaving,
         needsToken, setNeedsToken,
         payloadSize, setPayloadSize,
         count, setCount,
-        keyRef,
+        innerKeyRef,
+        outerKeyRef,
         saveChanges,
         debouncedSave
     };

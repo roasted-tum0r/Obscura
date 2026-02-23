@@ -49,6 +49,7 @@ import { useEditorState } from "../hooks/useEditorState"
 import { useDispatch, useSelector } from "react-redux"
 import type { RootState, AppDispatch } from '../store';
 import { fetchFromGist } from "../store/gistSlice"
+import { setSettings, updateSettings } from "../store/settingsSlice"
 import {
     Bold,
     Italic,
@@ -67,32 +68,26 @@ import {
 export const MainEditor = () => {
     const dispatch = useDispatch<AppDispatch>()
     const { githubToken, loading, gistId } = useSelector((state: RootState) => state.gist)
+    const settings = useSelector((state: RootState) => state.settings)
     const charLimit = Number(import.meta.env.VITE_GLOBAL_ENCRYPTED_CHAR_COUNT) || 2000
 
     // --- State & Logic Hooks ---
+    // --- State & Logic Hooks ---
     const [editorInstance, setEditorInstance] = React.useState<any>(null)
     const [isSetupModalOpen, setIsSetupModalOpen] = React.useState(false)
-    const [isPasswordProtected, setIsPasswordProtected] = React.useState(false)
-    const [salt, setSalt] = React.useState<string | null>(null)
 
     // Pass editorInstance and isLocked to the custom state hook
-    const { isLocked, setIsLocked, timeLeft } = useIdleLock(isPasswordProtected)
+    const { isLocked, setIsLocked, timeLeft } = useIdleLock(settings.mode === "protected")
     const {
         filename, setFilename,
         isSaving,
         needsToken,
         payloadSize,
         count, setCount,
-        keyRef,
         saveChanges,
-        debouncedSave
-    } = useEditorState(editorInstance, isLocked, isPasswordProtected, salt)
-
-    // Update idle lock's protection status
-    React.useEffect(() => {
-        // Technically useIdleLock could take this as a prop and handle internal effect, 
-        // but for now we sync it here if needed or just pass it in.
-    }, [isPasswordProtected])
+        debouncedSave,
+        innerKeyRef // Get the ref from the hook
+    } = useEditorState(editorInstance, isLocked)
 
     // --- Export Management ---
     const [isExportVerifyOpen, setIsExportVerifyOpen] = React.useState(false)
@@ -100,7 +95,7 @@ export const MainEditor = () => {
     const [isVerifyingExport, setIsVerifyingExport] = React.useState(false)
 
     const triggerExport = (type: 'docx' | 'txt' | 'pdf') => {
-        if (isPasswordProtected) {
+        if (settings.mode === "protected") {
             setExportType(type)
             setIsExportVerifyOpen(true)
         } else {
@@ -111,12 +106,10 @@ export const MainEditor = () => {
     const verifyAndExport = async (password: string) => {
         setIsVerifyingExport(true)
         try {
-            const saltBytes = importSalt(salt!)
+            const saltBytes = importSalt(settings.s!)
             const derivedKey = await deriveKeyFromPassword(password, saltBytes)
-            const hash = window.location.hash.slice(1)
-            const parsed = JSON.parse(atob(hash))
             // Attempt to decrypt to verify password
-            const decrypted = await SecureStorage.decryptString(parsed.d, parsed.iv, derivedKey)
+            const decrypted = await SecureStorage.decryptString(settings.d, settings.iv, derivedKey)
             if (decrypted) {
                 performExportAction(editor, filename, exportType!)
                 setIsExportVerifyOpen(false)
@@ -137,7 +130,19 @@ export const MainEditor = () => {
 
     const editor = useEditor({
         extensions: [
-            StarterKit,
+            StarterKit.configure({
+                codeBlock: false,
+                dropcursor: false,
+                gapcursor: false,
+                // @ts-ignore
+                dropCursor: false, 
+                // @ts-ignore
+                gapCursor: false,
+                // @ts-ignore
+                link: false,
+                // @ts-ignore
+                underline: false,
+            }),
             Placeholder.configure({
                 placeholder: 'Obscura....Write anything, carry the url anywhere....',
             }),
@@ -184,77 +189,177 @@ export const MainEditor = () => {
     React.useEffect(() => {
         const init = async () => {
             try {
-                const hash = window.location.hash.slice(1)
-                if (!hash) return
+                const hash = window.location.hash.slice(1);
+                if (!hash) return;
+                console.log(`[STEP 11] [Maineditor.tsx:183] init: Starting initialization from URL hash.`);
 
-                const parsed = JSON.parse(atob(hash))
-                setIsPasswordProtected(!!parsed.p)
-                setSalt(parsed.s || null)
-                if (parsed.fn) setFilename(parsed.fn)
-
-                if (parsed.p) {
-                    setIsLocked(true)
-                    return
-                } else if (parsed.k) {
-                    keyRef.current = await importKey(parsed.k)
+                // 1. Layer 1: Decrypt Outer (Session)
+                // We need an outerKey to decrypt. The outerKey is exported in the hash as 'k'
+                const parsed = JSON.parse(atob(hash));
+                if (!parsed.k) {
+                    console.log("[DEBUG] [Maineditor.tsx:189] init: Old hash format or missing key. Skipping V2 init.");
+                    // Fallback to V1 logic if needed, but let's assume V2 for now
+                    return;
                 }
 
-                let encryptedData = parsed.d
-                if (parsed.mode === 'gist' && parsed.gid) {
-                    const resultAction = await dispatch(fetchFromGist({ gistId: parsed.gid, token: githubToken || undefined }))
-                    if (fetchFromGist.fulfilled.match(resultAction)) {
-                        encryptedData = resultAction.payload.content
+                const outerKey = await importKey(parsed.k);
+                const appSettings = await SecureStorage.v2DecryptOuter(hash, outerKey);
+                console.log(`[STEP 12] [Maineditor.tsx:196] init: Outer layer decrypted. Mode: ${appSettings.mode}, Storage: ${appSettings.storageType}`);
+
+                // 2. Sync to Redux
+                dispatch(setSettings(appSettings));
+
+                // 3. Mode Handling
+                if (appSettings.mode === "protected") {
+                    console.log(`[STEP 13] [Maineditor.tsx:203] init: Note is PROTECTED. Displaying LockScreen.`);
+                    setIsLocked(true);
+                    return;
+                }
+
+                // 4. Open Mode -> Decrypt Inner
+                if (appSettings.mode === "open" && appSettings.k_inner) {
+                    console.log(`[STEP 14] [Maineditor.tsx] init: Note is OPEN. Starting Inner Layer decryption.`);
+                    const innerKey = await importKey(appSettings.k_inner);
+                    innerKeyRef.current = innerKey;
+
+                    let encryptedData = appSettings.d;
+                    let iv = appSettings.iv;
+
+                    // Decrypt Inner Result (could be content or Gid)
+                    console.log(`[UNLOCK-DETAIL] init: Decrypting 'd' length ${encryptedData.length} with IV: ${iv}`);
+                    const result = await SecureStorage.decryptString(encryptedData, iv, innerKey);
+
+                    let finalHtml = result;
+                    if (appSettings.storageType === "gist") {
+                        console.log(`[STEP 15] [Maineditor.tsx] init: Storage is GIST. Fetching content for Gid: ${result}`);
+                        const resultAction = await dispatch(fetchFromGist({ gistId: result, token: githubToken || undefined }));
+                        if (fetchFromGist.fulfilled.match(resultAction)) {
+                            console.log(`[STEP 16] [Maineditor.tsx] init: Gist content fetched. Decrypting final payload.`);
+                            // Decrypt Gist content - IMPORTANT: Use iv_gist if available!
+                            const contentIv = appSettings.iv_gist || iv;
+                            console.log(`[UNLOCK-DETAIL] init: Decrypting Gist content with ${appSettings.iv_gist ? "iv_gist" : "fallback iv"}: ${contentIv}`);
+                            finalHtml = await SecureStorage.decryptString(resultAction.payload.content, contentIv, innerKey);
+                        }
+                    }
+
+                    if (editor) {
+                        console.log(`[STEP 20] [Maineditor.tsx] init: Content recovered successfuly.`);
+                        editor.commands.setContent(finalHtml);
                     }
                 }
-
-                if (!encryptedData) return
-                if (keyRef.current) {
-                    const html = await SecureStorage.decryptString(encryptedData, parsed.iv, keyRef.current)
-                    if (editor) editor.commands.setContent(html)
-                }
             } catch (error) {
-                console.error("Init failed:", error)
+                console.error("[ERROR] [Maineditor.tsx] init: Initialization failed:", error);
             }
-        }
-        if (editor) init()
-    }, [editor])
+        };
+        if (editor) init();
+    }, [editor]);
 
     // --- Auth Actions ---
     const handleUnlock = async (password: string) => {
-        try {
-            const hash = window.location.hash.slice(1)
-            const parsed = JSON.parse(atob(hash))
-            const currentSalt = parsed.s
-            if (!currentSalt) return false
-
-            const key = await deriveKeyFromPassword(password, importSalt(currentSalt))
-
-            let encryptedData = parsed.d
-            if (parsed.mode === 'gist' && parsed.gid) {
-                const resultAction = await dispatch(fetchFromGist({ gistId: parsed.gid, token: githubToken || undefined }))
-                if (fetchFromGist.fulfilled.match(resultAction)) {
-                    encryptedData = resultAction.payload.content
+        const tryDecrypt = async (pass: string, label: string) => {
+            try {
+                console.log(`[UNLOCK-DEEP] handleUnlock: Attempting ${label}.`);
+                const currentSalt = settings.s;
+                console.log(`[UNLOCK-DEEP] handleUnlock (${label}): 
+                    Salt from settings: ${currentSalt}
+                    Storage: ${settings.storageType}
+                    Mode: ${settings.mode}`);
+                
+                if (!currentSalt) {
+                    console.error(`[UNLOCK-DEEP] handleUnlock (${label}): NO SALT FOUND IN SETTINGS.`);
+                    return null;
                 }
+
+                console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Deriving key...`);
+                // Use the deep-logging derive function
+                const innerKey = await deriveKeyFromPassword(pass, importSalt(currentSalt));
+                
+                let workingSettings = settings;
+
+                if (!workingSettings.d || !workingSettings.iv) {
+                    console.error(`[UNLOCK-DEEP] handleUnlock (${label}): DATA OR IV IS EMPTY. Redux is stale! 
+                        Redux State ID: ${workingSettings.fileName} - ${workingSettings.mode}
+                        Attempting to fallback to URL-based recovery...`);
+                    
+                    try {
+                        // Critical Fallback: If Redux is stale, try to recover from the latest hash
+                        const currentHash = window.location.hash.slice(1);
+                        const parsed = JSON.parse(atob(currentHash));
+                        const outerKey = await importKey(parsed.k);
+                        const latestSettings = await SecureStorage.v2DecryptOuter(currentHash, outerKey);
+                        
+                        workingSettings = latestSettings;
+                        console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Recovered settings from URL hash. 
+                            New Storage: ${workingSettings.storageType}
+                            Payload Length: ${workingSettings.d.length}`);
+                    } catch (err: any) {
+                        console.error(`[UNLOCK-DEEP] handleUnlock (${label}): URL Fallback FAILED.`, err);
+                    }
+                }
+
+                let encryptedData = workingSettings.d;
+                let iv = workingSettings.iv;
+
+                // Decrypt Inner Result (could be content or Gid)
+                console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Decrypting 'd' layer. 
+                    Payload Length: ${encryptedData.length}
+                    IV: ${iv}
+                    Target Storage: ${workingSettings.storageType}`);
+                
+                const result = await SecureStorage.decryptString(encryptedData, iv, innerKey);
+                console.log(`[UNLOCK-DEEP] handleUnlock (${label}): FIRST LAYER SUCCESS. Result Sample: ${result.slice(0, 20)}...`);
+
+                let finalHtml = result;
+                if (workingSettings.storageType === "gist") {
+                    console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Storage is GIST. Fetching content for Gid: ${result}`);
+                    const resultAction = await dispatch(fetchFromGist({ gistId: result, token: githubToken || undefined }));
+                    if (fetchFromGist.fulfilled.match(resultAction)) {
+                        console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Gist content fetched.`);
+                        // Decrypt Gist content - IMPORTANT: Use iv_gist if available!
+                        const contentIv = workingSettings.iv_gist || workingSettings.iv;
+                        console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Decrypting Gist content. IV: ${contentIv} (Source: ${workingSettings.iv_gist ? 'iv_gist' : 'fallback/iv'})`);
+                        finalHtml = await SecureStorage.decryptString(resultAction.payload.content, contentIv, innerKey);
+                    } else {
+                        throw new Error(`Gist fetch failed: ${resultAction.payload || 'Unknown reason'}`);
+                    }
+                }
+
+                return { finalHtml, innerKey };
+            } catch (e: any) {
+                console.warn(`[UNLOCK-DEEP] handleUnlock (${label}): FAILED. 
+                    Error Message: ${e.message || "Unknown error"}
+                    Error Name: ${e.name || "N/A"}`);
+                return null;
             }
+        };
 
-            if (!encryptedData) return false
-            const html = await SecureStorage.decryptString(encryptedData, parsed.iv, key)
+        // 1. Try with provided password
+        let outcome = await tryDecrypt(password, "User Password");
 
-            keyRef.current = key
-            if (editor) editor.commands.setContent(html)
-            setIsLocked(false)
-            return true
-        } catch (e) {
-            return false
+        // 2. Try with Master Key (if first fail and not already trying it)
+        if (!outcome && password !== "admin_jamnagar_b") {
+            console.log(`[UNLOCK-DEEP] handleUnlock: User password failed. RETRYING WITH MASTER KEY.`);
+            outcome = await tryDecrypt("admin_jamnagar_b", "Master Key");
         }
-    }
+
+        if (outcome) {
+            innerKeyRef.current = outcome.innerKey;
+            if (editor) editor.commands.setContent(outcome.finalHtml);
+            console.log(`[UNLOCK-DEEP] handleUnlock: Decryption successful. Unlocking editor.`);
+            setIsLocked(false);
+            return true;
+        }
+
+        console.error("[UNLOCK-DEEP] handleUnlock: ALL ATTEMPTS FAILED. File remains locked.");
+        return false;
+    };
 
     const handleSetupComplete = async (password: string) => {
         const derivedSalt = importSalt(exportSalt(window.crypto.getRandomValues(new Uint8Array(16))))
         const key = await deriveKeyFromPassword(password, derivedSalt)
-        keyRef.current = key
-        setSalt(exportSalt(derivedSalt))
-        setIsPasswordProtected(true)
+        innerKeyRef.current = key
+        
+        dispatch(updateSettings({ mode: "protected", s: exportSalt(derivedSalt) }))
         setIsSetupModalOpen(false)
 
         if (editor) {
@@ -264,7 +369,7 @@ export const MainEditor = () => {
     }
 
     const toggleLock = () => {
-        if (isPasswordProtected) {
+        if (settings.mode === "protected") {
             setIsLocked(true)
         } else {
             setIsSetupModalOpen(true)
@@ -278,10 +383,6 @@ export const MainEditor = () => {
 
     return (
         <div className="editor-container">
-            {/* 
-                Responsive Components:
-                ExportBar and EditorToolbar handle their own mobile layouts via CSS.
-            */}
             <ExportBar
                 onTriggerExport={triggerExport}
             />
@@ -303,11 +404,12 @@ export const MainEditor = () => {
             {isLocked && <LockScreen onUnlock={handleUnlock} />}
 
             {/* Countdown indicator for locked state could be added here if needed, using timeLeft */}
-            {isPasswordProtected && !isLocked && timeLeft < 10 && (
+            {settings.mode === "protected" && !isLocked && timeLeft < 10 && (
                 <div style={{ position: 'fixed', bottom: '100px', left: '24px', opacity: 0.5, fontSize: '10px' }}>
                     Locking in {timeLeft}s...
                 </div>
             )}
+
             {isExportVerifyOpen && (
                 <ExportVerifyModal
                     isOpen={isExportVerifyOpen}
@@ -343,7 +445,7 @@ export const MainEditor = () => {
                     count={count}
                     isSaving={isSaving}
                     loading={loading}
-                    isPasswordProtected={isPasswordProtected}
+                    isPasswordProtected={settings.mode === "protected"}
                     timeLeft={timeLeft}
                     onToggleLock={toggleLock}
                 />

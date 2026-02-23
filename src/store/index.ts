@@ -1,10 +1,11 @@
-// src/store/index.ts
 import { configureStore } from '@reduxjs/toolkit';
 import gistReducer from './gistSlice';
+import settingsReducer from './settingsSlice';
 
 export const store = configureStore({
     reducer: {
         gist: gistReducer,
+        settings: settingsReducer,
     },
 });
 
