@@ -32,13 +32,23 @@ import {
     Image as ImageIcon,
     FileCode,
     Menu,
-    X
+    X,
+    Unlock,
+    Shield, Loader2, Lock
 } from 'lucide-react'
 
 interface EditorToolbarProps {
     editor: Editor | null
     filename: string
     setFilename: (name: string) => void
+    isProtected: boolean
+    onToggleSecurity: (newState: "open" | "protected") => void
+    isSaving: boolean;
+    loading: boolean;
+    isPasswordProtected: boolean;
+    timeLeft: number;
+    onToggleLock: () => void;
+    count: { words: number; chars: number };
 }
 
 const useIsMobile = () => {
@@ -51,13 +61,75 @@ const useIsMobile = () => {
     return isMobile
 }
 
-export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, filename, setFilename }) => {
+export const EditorToolbar: React.FC<EditorToolbarProps> = ({
+    editor,
+    filename,
+    setFilename,
+    isProtected,
+    onToggleSecurity,
+    isSaving,
+    loading,
+    isPasswordProtected,
+    timeLeft,
+    onToggleLock,
+    count
+}) => {
     const [isOpen, setIsOpen] = React.useState(true)
     const [activeGroup, setActiveGroup] = React.useState<string | null>(null)
     const [hoveredGrid, setHoveredGrid] = React.useState({ r: 0, c: 0 })
     const isMobile = useIsMobile()
 
     if (!editor) return null
+
+    const SecuritySlider = () => (
+        <div className="security-hud-wrapper">
+            <div 
+                className="security-slider-container" 
+                data-state={isProtected ? "protected" : "open"}
+                onClick={() => onToggleSecurity(isProtected ? "open" : "protected")}
+                title={isProtected ? "Protected: Click to remove protection" : "Open: Click to protect file"}
+            >
+                <div className="security-slider-knob" />
+                <div className="security-slider-track">
+                    <Unlock className="security-slider-icon open" size={14} />
+                    <Shield className="security-slider-icon protected" size={14} />
+                </div>
+            </div>
+
+            <div className="security-status-indicator">
+                {isSaving || loading ? (
+                    <div className="status-badge saving">
+                        <Loader2 size={14} className="animate-spin" />
+                        {!isMobile && <span>Syncing</span>}
+                    </div>
+                ) : isPasswordProtected ? (
+                    <div 
+                        className={`status-badge protected ${timeLeft < 10 && timeLeft > 0 ? 'urgent' : ''}`}
+                        onClick={onToggleLock}
+                        title="File Protected. Click to lock now."
+                    >
+                        <Lock size={14} />
+                        {timeLeft > 0 && <span className="timer-text">{timeLeft}s</span>}
+                    </div>
+                ) : (
+                    <div 
+                        className="status-badge open" 
+                        onClick={onToggleLock}
+                        title="File Open. Click to setup protection."
+                    >
+                        <Unlock size={14} style={{ opacity: 0.5 }} />
+                    </div>
+                )}
+            </div>
+            
+            {!isMobile && (
+                <div className="toolbar-stats">
+                    <span className="stat"><span className="val">{count.words}</span> words</span>
+                    <span className="stat"><span className="val">{count.chars}</span> chars</span>
+                </div>
+            )}
+        </div>
+    )
 
     const insertTable = (rows: number, cols: number) => {
         editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()
@@ -299,7 +371,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, filename, 
 
     return (
         <>
-            <button 
+            <button
                 className={`toolbar-burger glass ${isOpen ? 'active' : ''}`}
                 onClick={() => {
                     if (isOpen) setActiveGroup(null)
@@ -309,13 +381,16 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, filename, 
                 {isOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
 
-            <div 
-                className={`floating-toolbar ${isOpen ? 'toolbar-open' : ''}`} 
+            <div
+                className={`floating-toolbar ${isOpen ? 'toolbar-open' : ''}`}
                 data-layout={isMobile ? "mobile" : "desktop"}
                 onMouseLeave={() => setHoveredGrid({ r: 0, c: 0 })}
             >
                 {isMobile ? (
                     <>
+                        <div className="security-bubble glass">
+                            <SecuritySlider />
+                        </div>
                         <div className="toolbar-bubble glass">
                             <div className="toolbar-scroll-container">
                                 {items.map((item, index) => (
@@ -344,6 +419,9 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, filename, 
                     </>
                 ) : (
                     <>
+                        <div className="security-bubble glass">
+                            <SecuritySlider />
+                        </div>
                         <div className="filename-bubble glass">
                             <div className="toolbar-filename">
                                 <input
@@ -386,14 +464,14 @@ interface ToolbarItemProps {
     insertTable: (r: number, c: number) => void
 }
 
-const ToolbarItem: React.FC<ToolbarItemProps> = ({ 
-    item, 
-    activeGroup, 
-    setActiveGroup, 
-    isOpen, 
-    hoveredGrid, 
-    setHoveredGrid, 
-    insertTable 
+const ToolbarItem: React.FC<ToolbarItemProps> = ({
+    item,
+    activeGroup,
+    setActiveGroup,
+    isOpen,
+    hoveredGrid,
+    setHoveredGrid,
+    insertTable
 }) => {
     if ('isGroup' in item && item.isGroup) {
         const CurrentIcon = item.icon
@@ -403,7 +481,7 @@ const ToolbarItem: React.FC<ToolbarItemProps> = ({
                 onMouseEnter={() => !isOpen && setActiveGroup(item.id!)}
                 onMouseLeave={() => !isOpen && setActiveGroup(null)}
             >
-                <button 
+                <button
                     className={`toolbar-btn ${activeGroup === item.id ? 'active' : ''}`}
                     title={item.title}
                     onClick={(e) => {

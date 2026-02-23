@@ -42,8 +42,6 @@ import { SetupPasswordModal } from "./SetupPasswordModal"
 import { LockScreen } from "./LockScreen"
 import { ExportVerifyModal } from "./ExportVerifyModal"
 import { ExportBar, performExportAction } from "./ExportBar"
-import { StorageHUD } from "./StorageHUD"
-import { StatsBubble } from "./StatsBubble"
 import { useIdleLock } from "../hooks/useIdleLock"
 import { useEditorState } from "../hooks/useEditorState"
 import { useDispatch, useSelector } from "react-redux"
@@ -57,7 +55,6 @@ import {
     Heading1,
     Heading2,
     Baseline,
-    CheckCircle2,
     Code,
     Link as LinkIcon,
     AlignLeft,
@@ -67,11 +64,9 @@ import {
 
 export const MainEditor = () => {
     const dispatch = useDispatch<AppDispatch>()
-    const { githubToken, loading, gistId } = useSelector((state: RootState) => state.gist)
+    const { githubToken, loading } = useSelector((state: RootState) => state.gist)
     const settings = useSelector((state: RootState) => state.settings)
-    const charLimit = Number(import.meta.env.VITE_GLOBAL_ENCRYPTED_CHAR_COUNT) || 2000
 
-    // --- State & Logic Hooks ---
     // --- State & Logic Hooks ---
     const [editorInstance, setEditorInstance] = React.useState<any>(null)
     const [isSetupModalOpen, setIsSetupModalOpen] = React.useState(false)
@@ -81,8 +76,6 @@ export const MainEditor = () => {
     const {
         filename, setFilename,
         isSaving,
-        needsToken,
-        payloadSize,
         count, setCount,
         saveChanges,
         debouncedSave,
@@ -135,7 +128,7 @@ export const MainEditor = () => {
                 dropcursor: false,
                 gapcursor: false,
                 // @ts-ignore
-                dropCursor: false, 
+                dropCursor: false,
                 // @ts-ignore
                 gapCursor: false,
                 // @ts-ignore
@@ -264,7 +257,7 @@ export const MainEditor = () => {
                     Salt from settings: ${currentSalt}
                     Storage: ${settings.storageType}
                     Mode: ${settings.mode}`);
-                
+
                 if (!currentSalt) {
                     console.error(`[UNLOCK-DEEP] handleUnlock (${label}): NO SALT FOUND IN SETTINGS.`);
                     return null;
@@ -273,21 +266,21 @@ export const MainEditor = () => {
                 console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Deriving key...`);
                 // Use the deep-logging derive function
                 const innerKey = await deriveKeyFromPassword(pass, importSalt(currentSalt));
-                
+
                 let workingSettings = settings;
 
                 if (!workingSettings.d || !workingSettings.iv) {
                     console.error(`[UNLOCK-DEEP] handleUnlock (${label}): DATA OR IV IS EMPTY. Redux is stale! 
                         Redux State ID: ${workingSettings.fileName} - ${workingSettings.mode}
                         Attempting to fallback to URL-based recovery...`);
-                    
+
                     try {
                         // Critical Fallback: If Redux is stale, try to recover from the latest hash
                         const currentHash = window.location.hash.slice(1);
                         const parsed = JSON.parse(atob(currentHash));
                         const outerKey = await importKey(parsed.k);
                         const latestSettings = await SecureStorage.v2DecryptOuter(currentHash, outerKey);
-                        
+
                         workingSettings = latestSettings;
                         console.log(`[UNLOCK-DEEP] handleUnlock (${label}): Recovered settings from URL hash. 
                             New Storage: ${workingSettings.storageType}
@@ -305,7 +298,7 @@ export const MainEditor = () => {
                     Payload Length: ${encryptedData.length}
                     IV: ${iv}
                     Target Storage: ${workingSettings.storageType}`);
-                
+
                 const result = await SecureStorage.decryptString(encryptedData, iv, innerKey);
                 console.log(`[UNLOCK-DEEP] handleUnlock (${label}): FIRST LAYER SUCCESS. Result Sample: ${result.slice(0, 20)}...`);
 
@@ -358,13 +351,41 @@ export const MainEditor = () => {
         const derivedSalt = importSalt(exportSalt(window.crypto.getRandomValues(new Uint8Array(16))))
         const key = await deriveKeyFromPassword(password, derivedSalt)
         innerKeyRef.current = key
-        
+
         dispatch(updateSettings({ mode: "protected", s: exportSalt(derivedSalt) }))
         setIsSetupModalOpen(false)
 
         if (editor) {
             saveChanges(editor.getHTML(), { forceProtected: true, forceSalt: exportSalt(derivedSalt) })
             setIsLocked(true)
+        }
+    }
+
+    const handleUnprotect = async () => {
+        if (!editor || !innerKeyRef.current) return
+
+        console.log("[SECURITY-TOGGLE] handleUnprotect: Converting Protected -> Open");
+        // Update local settings first
+        dispatch(updateSettings({ mode: "open" }));
+
+        // Re-encrypt current content with public key (mode: open)
+        await saveChanges(editor.getHTML(), { forceProtected: false });
+        console.log("[SECURITY-TOGGLE] handleUnprotect: Transition complete.");
+    }
+
+    const onToggleSecurity = (newState: "open" | "protected") => {
+        if (newState === "protected") {
+            if (settings.mode === "open") {
+                setIsSetupModalOpen(true)
+            } else if (isLocked) {
+                // If it's already protected but currently locked, onToggleSecurity(protected) doesn't make sense 
+                // but the slider UI might trigger it. We do nothing or focus input.
+            }
+        } else {
+            // Unprotect
+            if (window.confirm("Are you sure you want to remove password protection? This file will be saved in 'Open' mode.")) {
+                handleUnprotect()
+            }
         }
     }
 
@@ -387,7 +408,19 @@ export const MainEditor = () => {
                 onTriggerExport={triggerExport}
             />
 
-            <EditorToolbar editor={editor} filename={filename} setFilename={setFilename} />
+            <EditorToolbar
+                editor={editor}
+                filename={filename}
+                setFilename={setFilename}
+                isProtected={settings.mode === "protected"}
+                onToggleSecurity={onToggleSecurity}
+                isSaving={isSaving}
+                loading={loading}
+                isPasswordProtected={settings.mode === "protected"}
+                timeLeft={timeLeft}
+                onToggleLock={toggleLock}
+                count={count}
+            />
 
             <div className="editor-content-wrapper">
                 <EditorContent editor={editor} />
@@ -401,14 +434,7 @@ export const MainEditor = () => {
                 />
             )}
 
-            {isLocked && <LockScreen onUnlock={handleUnlock} />}
-
-            {/* Countdown indicator for locked state could be added here if needed, using timeLeft */}
-            {settings.mode === "protected" && !isLocked && timeLeft < 10 && (
-                <div style={{ position: 'fixed', bottom: '100px', left: '24px', opacity: 0.5, fontSize: '10px' }}>
-                    Locking in {timeLeft}s...
-                </div>
-            )}
+            {isLocked && <LockScreen filename={settings.fileName} onUnlock={handleUnlock} />}
 
             {isExportVerifyOpen && (
                 <ExportVerifyModal
@@ -419,7 +445,7 @@ export const MainEditor = () => {
                 />
             )}
 
-            {/* --- Bubble Menu & HUDs --- */}
+            {/* --- Bubble Menu --- */}
             {editor && (
                 <BubbleMenu editor={editor} className="bubble-menu glass">
                     <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'active' : ''}><Bold size={16} /></button>
@@ -438,34 +464,6 @@ export const MainEditor = () => {
                     <button onClick={() => editor.chain().focus().toggleCode().run()} className={editor.isActive('code') ? 'active' : ''}><Code size={16} /></button>
                 </BubbleMenu>
             )}
-
-            {/* Status HUDs */}
-            <div className="editor-status-huds">
-                <StatsBubble
-                    count={count}
-                    isSaving={isSaving}
-                    loading={loading}
-                    isPasswordProtected={settings.mode === "protected"}
-                    timeLeft={timeLeft}
-                    onToggleLock={toggleLock}
-                />
-
-                <StorageHUD
-                    payloadSize={payloadSize}
-                    needsToken={needsToken}
-                    loading={loading}
-                    gistId={gistId}
-                    githubToken={githubToken}
-                    charLimit={charLimit}
-                />
-            </div>
-
-            <div className="editor-footer glass">
-                <div className="footer-section">
-                    <CheckCircle2 size={12} className={isSaving ? 'animate-pulse text-accent' : 'text-green-400'} />
-                    <span>{isSaving ? 'Syncing...' : 'Encrypted & Saved'}</span>
-                </div>
-            </div>
         </div>
     )
 }

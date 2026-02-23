@@ -386,7 +386,8 @@ body {
 
 /* BUBBLE STYLING */
 .filename-bubble,
-.toolbar-bubble {
+.toolbar-bubble,
+.security-bubble {
   border-radius: 20px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -398,6 +399,12 @@ body {
   /* CRITICAL: overflow: visible allows submenus to pop out. 
      Using hidden here was clipping the fixed/absolute submenus. */
   overflow: visible; 
+}
+
+.security-bubble {
+  padding: 4px;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Desktop Bubble Constraints */
@@ -575,6 +582,85 @@ body {
   flex-direction: column;
 }
 
+.lock-icon-container {
+  width: 88px;
+  height: 88px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  margin: 0 auto;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(20px);
+  position: relative;
+  overflow: hidden;
+}
+
+.lock-icon-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+}
+
+.filename-chip {
+  padding: 8px 20px;
+  background: var(--glass-bright);
+  border: 1px solid var(--border);
+  border-radius: 40px;
+  font-size: 13px;
+  color: #fff;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.premium-input-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.premium-input-wrapper:focus-within {
+  border-color: var(--accent);
+  background: rgba(139, 92, 246, 0.03);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1), 0 10px 40px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.premium-password-input {
+  width: 100%;
+  height: 64px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 24px;
+  text-align: center;
+  padding: 0 60px 0 20px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.1em;
+}
+
+.premium-password-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 18px;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: normal;
+}
+
 /* --- TABLE STYLES --- */
 .ProseMirror table {
   border-collapse: collapse;
@@ -626,11 +712,184 @@ body {
   overflow-x: auto;
 }
 
-/* --- TOOLBAR GROUPING --- */
-.toolbar-group {
-  position: relative;
+.suggest-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 16px;
+  padding: 8px 12px;
+  opacity: 0.8;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.suggest-btn:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+}
+
+/* Security Slider in Toolbar */
+.security-slider-container {
+  display: flex;
+  padding: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  position: relative;
+  width: 90px;
+  height: 44px;
+  cursor: pointer;
+  margin: 4px auto;
+  user-select: none;
+}
+
+.security-slider-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  z-index: 1;
+}
+
+.security-slider-knob {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 38px;
+  background: #fff;
+  border-radius: 100px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 0;
+}
+
+.security-slider-container[data-state="protected"] .security-slider-knob {
+  transform: translateX(44px);
+  background: var(--accent);
+}
+
+.security-slider-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+  transition: color 0.3s;
+}
+
+.security-slider-container[data-state="open"] .security-slider-icon.open {
+  color: #000;
+}
+
+.security-slider-container[data-state="protected"] .security-slider-icon.protected {
+  color: #fff;
+}
+
+.security-hud-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.security-status-indicator {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  min-width: 40px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.status-badge.saving {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  cursor: default;
+}
+
+.status-badge.protected {
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.1);
+}
+
+.status-badge.protected:hover {
+  background: rgba(192, 132, 252, 0.2);
+  transform: translateY(-1px);
+}
+
+.status-badge.protected.urgent {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+  animation: pulse-red-badge 2s infinite;
+}
+
+@keyframes pulse-red-badge {
+  0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(248, 113, 113, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+}
+
+.status-badge.open {
+  color: var(--text-secondary);
+  background: var(--glass-bright);
+  opacity: 0.6;
+}
+
+.status-badge.open:hover {
+  opacity: 1;
+  background: var(--border);
+}
+
+.timer-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+
+.toolbar-stats {
+  margin-left: auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.toolbar-stats .val {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.security-bubble {
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  min-width: max-content;
 }
 
 /* Breakout Submenus (Unified Control) */

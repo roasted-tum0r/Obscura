@@ -3,9 +3,10 @@ import { Lock, ArrowRight, Loader2 } from 'lucide-react'
 
 interface LockScreenProps {
     onUnlock: (password: string) => Promise<boolean>
+    filename: string
 }
 
-export const LockScreen = ({ onUnlock }: LockScreenProps) => {
+export const LockScreen = ({ onUnlock, filename }: LockScreenProps) => {
     const [password, setPassword] = React.useState('')
     const [isUnlocking, setIsUnlocking] = React.useState(false)
     const [error, setError] = React.useState(false)
@@ -24,51 +25,46 @@ export const LockScreen = ({ onUnlock }: LockScreenProps) => {
             setError(true)
             setShake(true)
             setTimeout(() => setShake(false), 500)
-            setPassword('')
+            // setPassword('') // Keep password for correction? User preference: Keep it or clear? I'll clear but maybe with a delay
         }
         setIsUnlocking(false)
     }
 
     return (
         <div className="lock-screen" style={{ padding: '24px' }}>
-            <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', opacity: 0.1, pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', opacity: 0.15, pointerEvents: 'none' }}>
                 <div style={{ position: 'absolute', top: '-20%', left: '-20%', width: '60%', height: '60%', background: 'var(--accent)', filter: 'blur(160px)', borderRadius: '50%' }} />
                 <div style={{ position: 'absolute', bottom: '-20%', right: '-20%', width: '60%', height: '60%', background: '#3b82f6', filter: 'blur(160px)', borderRadius: '50%' }} />
             </div>
 
             <div
                 className={shake ? 'animate-shake' : ''}
-                style={{ width: '100%', maxWidth: '400px', textAlign: 'center', position: 'relative', zIndex: 10 }}
+                style={{ width: '100%', maxWidth: '440px', textAlign: 'center', position: 'relative', zIndex: 10 }}
             >
                 <div style={{ marginBottom: '40px' }}>
-                    <div style={{
-                        width: '88px', height: '88px', borderRadius: '28px',
-                        background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-                        margin: '0 auto', boxShadow: 'var(--shadow-lg)', backdropFilter: 'blur(20px)'
-                    }}>
-                        <Lock size={36} />
+                    <div className="lock-icon-container">
+                        <Lock size={32} />
                     </div>
                 </div>
 
-                <h2 style={{ fontSize: '2.25rem', fontWeight: '800', color: '#fff', marginBottom: '12px', fontFamily: 'Outfit, sans-serif', letterSpacing: '-0.02em' }}>
-                    Obscura Locked
-                </h2>
-                <p style={{ color: 'var(--text-secondary)', marginBottom: '48px', fontSize: '1rem', opacity: 0.7 }}>
-                    Enter your passkey to access this file
-                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginBottom: '48px' }}>
+                    <h2 style={{ fontSize: '2.5rem', fontWeight: '800', color: '#fff', margin: 0, fontFamily: 'Outfit, sans-serif', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        Obscura
+                    </h2>
+                    <div className="filename-chip">
+                        <span style={{ opacity: 0.5 }}>File:</span> {filename || 'Untitled'}
+                    </div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', opacity: 0.6, marginTop: '8px' }}>
+                        This vault is protected by end-to-end encryption.
+                    </p>
+                </div>
 
-                <form onSubmit={handleSubmit} style={{ position: 'relative' }}>
+                <form onSubmit={handleSubmit} className="premium-input-wrapper" style={{ borderColor: error ? 'rgba(239, 68, 68, 0.4)' : undefined }}>
                     <input
                         autoFocus
                         type="password"
-                        placeholder="••••••••"
-                        className="input-field"
-                        style={{
-                            height: '72px', fontSize: '28px', textAlign: 'center',
-                            fontFamily: 'monospace', letterSpacing: '0.4em',
-                            borderColor: error ? 'rgba(239, 68, 68, 0.4)' : 'var(--border)'
-                        }}
+                        placeholder="Enter Passkey"
+                        className="premium-password-input"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />

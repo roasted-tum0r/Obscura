@@ -43,26 +43,28 @@ export const SetupPasswordModal = ({ onComplete, onClose }: SetupPasswordModalPr
                         </p>
                     </div>
 
-                    <div style={{ position: 'relative' }}>
+                    <div className="premium-input-wrapper" style={{ marginBottom: '12px' }}>
                         <input
                             type={showPassword ? "text" : "password"}
                             placeholder="Enter a strong passkey..."
-                            className="input-field"
-                            style={{ fontFamily: 'monospace' }}
+                            className="premium-password-input"
+                            style={{ textAlign: 'left', paddingRight: '100px', fontSize: '18px' }}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                         />
                         <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '4px' }}>
                             <button
                                 onClick={() => setShowPassword(!showPassword)}
-                                style={{ padding: '8px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
+                                style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex' }}
+                                title={showPassword ? "Hide Password" : "Show Password"}
                             >
                                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                             </button>
                             {password && (
                                 <button
                                     onClick={handleCopy}
-                                    style={{ padding: '8px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
+                                    style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex' }}
+                                    title="Copy Password"
                                 >
                                     {copied ? <Check size={18} style={{ color: '#4ade80' }} /> : <Copy size={18} />}
                                 </button>
@@ -72,9 +74,10 @@ export const SetupPasswordModal = ({ onComplete, onClose }: SetupPasswordModalPr
 
                     <button
                         onClick={suggestPassword}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '12px', cursor: 'pointer', marginTop: '12px', padding: '0 4px', opacity: 0.8 }}
+                        className="suggest-btn"
                     >
-                        Need a suggestion?
+                        <Shield size={12} />
+                        Need a strong suggestion?
                     </button>
                 </div>
 
