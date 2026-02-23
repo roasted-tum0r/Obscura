@@ -1480,3 +1480,28 @@ body {
     display: none;
   }
 }
+
+.version-badge {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  opacity: 0.4;
+  border-radius: 20px;
+  z-index: 50;
+  pointer-events: none;
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 0.1em;
+  transition: opacity 0.3s;
+  text-transform: uppercase;
+  background: var(--glass-bright);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+}
+
+.version-badge:hover {
+  opacity: 0.8;
+}

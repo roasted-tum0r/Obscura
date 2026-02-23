@@ -463,6 +463,9 @@ export const MainEditor = () => {
 
     return (
         <div className="editor-container">
+            <div className="version-badge glass">
+                version : {import.meta.env.PACKAGE_VERSION}
+            </div>
             <ExportBar
                 onTriggerExport={triggerExport}
             />
