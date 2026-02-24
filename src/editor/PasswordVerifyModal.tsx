@@ -1,23 +1,33 @@
 import React from 'react'
-import { ArrowRight, Loader2, X, ShieldAlert } from 'lucide-react'
+import { ArrowRight, Loader2, X, ShieldAlert, type LucideIcon } from 'lucide-react'
 
-interface VerifyPasswordModalProps {
-    onVerify: (password: string) => Promise<boolean>
+interface PasswordVerifyModalProps {
+    isOpen: boolean
     onClose: () => void
+    onVerify: (password: string) => Promise<boolean> | void
     title?: string
     description?: string
+    placeholder?: string
+    buttonText?: string
+    icon?: LucideIcon
 }
 
-export const VerifyPasswordModal = ({ 
-    onVerify, 
-    onClose, 
-    title = "Verify Identity", 
-    description = "Please enter your passkey to confirm this action." 
-}: VerifyPasswordModalProps) => {
+export const PasswordVerifyModal = ({
+    isOpen,
+    onClose,
+    onVerify,
+    title = "Verify Identity",
+    description = "Please enter your passkey to confirm this action.",
+    placeholder = "Enter Passkey",
+    buttonText,
+    icon: Icon = ShieldAlert
+}: PasswordVerifyModalProps) => {
     const [password, setPassword] = React.useState('')
     const [isVerifying, setIsVerifying] = React.useState(false)
     const [error, setError] = React.useState(false)
     const [shake, setShake] = React.useState(false)
+
+    if (!isOpen) return null
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault()
@@ -26,14 +36,23 @@ export const VerifyPasswordModal = ({
         setIsVerifying(true)
         setError(false)
 
-        const success = await onVerify(password)
-
-        if (!success) {
+        try {
+            const success = await onVerify(password)
+            // If onVerify returns void, we assume success or that it handles closing
+            if (success === false) {
+                setError(true)
+                setShake(true)
+                setTimeout(() => setShake(false), 500)
+            } else if (success === true) {
+                setPassword('')
+            }
+        } catch (err) {
             setError(true)
             setShake(true)
             setTimeout(() => setShake(false), 500)
+        } finally {
+            setIsVerifying(false)
         }
-        setIsVerifying(false)
     }
 
     return (
@@ -48,7 +67,7 @@ export const VerifyPasswordModal = ({
 
                 <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                     <div className="lock-icon-container" style={{ width: '64px', height: '64px', borderRadius: '20px', marginBottom: '24px' }}>
-                        <ShieldAlert size={28} />
+                        <Icon size={28} />
                     </div>
                     <h2 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#fff', margin: '0 0 8px 0', fontFamily: 'Outfit, sans-serif' }}>
                         {title}
@@ -62,31 +81,54 @@ export const VerifyPasswordModal = ({
                     <input
                         autoFocus
                         type="password"
-                        placeholder="Enter Passkey"
+                        placeholder={placeholder}
                         className="premium-password-input"
                         style={{ height: '56px', fontSize: '18px' }}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => {
+                            setPassword(e.target.value)
+                            if (error) setError(false)
+                        }}
                     />
 
+                    {!buttonText ? (
+                        <button
+                            type="submit"
+                            disabled={!password || isVerifying}
+                            style={{
+                                position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                                width: '40px', height: '40px', borderRadius: '12px', background: '#fff', color: '#000',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                                border: 'none', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                opacity: password ? 1 : 0, scale: password ? '1' : '0.8'
+                            }}
+                        >
+                            {isVerifying ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <ArrowRight size={18} />
+                            )}
+                        </button>
+                    ) : null}
+                </form>
+
+                {buttonText && (
                     <button
-                        type="submit"
+                        onClick={handleSubmit}
+                        className="setup-btn"
+                        style={{ marginTop: '24px', width: '100%', height: '56px' }}
                         disabled={!password || isVerifying}
-                        style={{
-                            position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
-                            width: '40px', height: '40px', borderRadius: '12px', background: '#fff', color: '#000',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                            border: 'none', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            opacity: password ? 1 : 0, scale: password ? '1' : '0.8'
-                        }}
                     >
                         {isVerifying ? (
-                            <Loader2 size={18} className="animate-spin" />
+                            <>
+                                <Loader2 size={18} className="animate-spin" />
+                                <span>Verifying...</span>
+                            </>
                         ) : (
-                            <ArrowRight size={18} />
+                            <span>{buttonText}</span>
                         )}
                     </button>
-                </form>
+                )}
 
                 {error && (
                     <div style={{ marginTop: '20px', padding: '12px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', fontSize: '14px', border: '1px solid rgba(239, 68, 68, 0.2)', textAlign: 'center' }}>

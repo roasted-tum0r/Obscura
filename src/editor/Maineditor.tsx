@@ -40,10 +40,9 @@ import { SecureStorage } from "../utils/SecureStorage"
 import { EditorToolbar } from "./EditorToolbar"
 import { SetupPasswordModal } from "./SetupPasswordModal"
 import { LockScreen } from "./LockScreen"
-import { VerifyPasswordModal } from "./VerifyPasswordModal"
+import { PasswordVerifyModal } from "./PasswordVerifyModal"
 import { LinkModal } from "./LinkModal"
 import { TextPromptModal } from "./TextPromptModal"
-import { ExportVerifyModal } from "./ExportVerifyModal"
 import { ExportBar, performExportAction } from "./ExportBar"
 import { useIdleLock } from "../hooks/useIdleLock"
 import { useEditorState } from "../hooks/useEditorState"
@@ -63,6 +62,7 @@ import {
     AlignLeft,
     AlignCenter,
     AlignRight,
+    Lock
 } from 'lucide-react'
 
 export const MainEditor = () => {
@@ -98,7 +98,6 @@ export const MainEditor = () => {
     // --- Export Management ---
     const [isExportVerifyOpen, setIsExportVerifyOpen] = React.useState(false)
     const [exportType, setExportType] = React.useState<'docx' | 'txt' | 'pdf' | null>(null)
-    const [isVerifyingExport, setIsVerifyingExport] = React.useState(false)
 
     const triggerExport = (type: 'docx' | 'txt' | 'pdf') => {
         if (settings.mode === "protected") {
@@ -109,8 +108,7 @@ export const MainEditor = () => {
         }
     }
 
-    const verifyAndExport = async (password: string) => {
-        setIsVerifyingExport(true)
+    const verifyAndExport = async (password: string): Promise<boolean> => {
         try {
             const saltBytes = importSalt(settings.s!)
             const derivedKey = await deriveKeyFromPassword(password, saltBytes)
@@ -119,11 +117,12 @@ export const MainEditor = () => {
             if (decrypted) {
                 performExportAction(editor, filename, exportType!)
                 setIsExportVerifyOpen(false)
+                return true
             }
+            return false
         } catch (e) {
-            alert("Incorrect password")
-        } finally {
-            setIsVerifyingExport(false)
+            console.error(e)
+            return false
         }
     }
 
@@ -499,14 +498,13 @@ export const MainEditor = () => {
 
             {isLocked && <LockScreen filename={settings.fileName} onUnlock={handleUnlock} />}
 
-            {isVerifyModalOpen && (
-                <VerifyPasswordModal 
-                    onVerify={handleVerifyUnprotect}
-                    onClose={() => setIsVerifyModalOpen(false)}
-                    title="Remove Protection?"
-                    description="Confirming your passkey will remove end-to-end encryption from this file."
-                />
-            )}
+            <PasswordVerifyModal 
+                isOpen={isVerifyModalOpen}
+                onVerify={handleVerifyUnprotect}
+                onClose={() => setIsVerifyModalOpen(false)}
+                title="Remove Protection?"
+                description="Confirming your passkey will remove end-to-end encryption from this file."
+            />
 
             {isLinkModalOpen && (
                 <LinkModal 
@@ -531,14 +529,15 @@ export const MainEditor = () => {
                 />
             )}
 
-            {isExportVerifyOpen && (
-                <ExportVerifyModal
-                    isOpen={isExportVerifyOpen}
-                    onClose={() => setIsExportVerifyOpen(false)}
-                    onVerify={verifyAndExport}
-                    isVerifying={isVerifyingExport}
-                />
-            )}
+            <PasswordVerifyModal
+                isOpen={isExportVerifyOpen}
+                onClose={() => setIsExportVerifyOpen(false)}
+                onVerify={verifyAndExport}
+                title="Verify Identity"
+                description="Enter password to authorize download"
+                buttonText="Confirm & Download"
+                icon={Lock}
+            />
 
             {/* --- Bubble Menu --- */}
             {editor && (

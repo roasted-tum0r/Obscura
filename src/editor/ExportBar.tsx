@@ -3,7 +3,6 @@ import { Download, FileType, FileIcon, Baseline } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { asBlob } from 'html-docx-js-typescript';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 import type { Editor } from '@tiptap/react';
 
 interface ExportBarProps {
@@ -77,23 +76,63 @@ export const performExportAction = async (
         const element = document.querySelector('.ProseMirror');
         if (element) {
             try {
-                const canvas = await html2canvas(element as HTMLElement, {
-                    scale: 2,
-                    useCORS: true,
-                    backgroundColor: '#000000'
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const margin = 20;
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const contentWidth = pdfWidth - (2 * margin);
+                let cursorY = margin;
+
+                // Set initial font to Times New Roman
+                pdf.setFont("times", "normal");
+                
+                // Process the document nodes
+                const nodes = Array.from(element.children);
+                
+                nodes.forEach((node) => {
+                    const tag = node.tagName.toLowerCase();
+                    const text = (node as HTMLElement).innerText;
+                    
+                    if (!text.trim() && tag !== 'hr') return;
+
+                    let fontSize = 11;
+                    let fontStyle = "normal";
+                    let spacing = 7;
+
+                    if (tag === 'h1') {
+                        fontSize = 22;
+                        fontStyle = "bold";
+                        spacing = 10;
+                    } else if (tag === 'h2') {
+                        fontSize = 16;
+                        fontStyle = "bold";
+                        spacing = 8;
+                    } else if (tag === 'blockquote') {
+                        fontStyle = "italic";
+                        fontSize = 11;
+                    }
+
+                    pdf.setFont("times", fontStyle);
+                    pdf.setFontSize(fontSize);
+
+                    // Wrap text
+                    const lines = pdf.splitTextToSize(text, contentWidth);
+                    
+                    // Check for page break
+                    const totalLineHeight = lines.length * (fontSize * 0.4);
+                    if (cursorY + totalLineHeight + spacing > pdf.internal.pageSize.getHeight() - margin) {
+                        pdf.addPage();
+                        cursorY = margin;
+                    }
+
+                    // Render lines
+                    lines.forEach((line: string) => {
+                        pdf.text(line, margin, cursorY);
+                        cursorY += (fontSize * 0.4);
+                    });
+
+                    cursorY += 4; // Paragraph gap
                 });
 
-                const imgData = canvas.toDataURL('image/png');
-                if (!imgData || imgData === 'data:,') {
-                    throw new Error("Generated image data is empty or invalid");
-                }
-
-                const pdf = new jsPDF('p', 'mm', 'a4');
-                const imgProps = pdf.getImageProperties(imgData);
-                const pdfWidth = pdf.internal.pageSize.getWidth();
-                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
                 pdf.save(`${finalFilename}.pdf`);
             } catch (error) {
                 console.error("[Export] PDF generation failed:", error);
