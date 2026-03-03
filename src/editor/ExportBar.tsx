@@ -1,47 +1,60 @@
 import React from 'react';
-import { Download, FileType, FileIcon, Baseline } from 'lucide-react';
+import { Download,  } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { asBlob } from 'html-docx-js-typescript';
 import { jsPDF } from 'jspdf';
 import type { Editor } from '@tiptap/react';
-
+interface ExportOptions {
+    type: string;
+    icon: React.ReactNode;
+    label: string;
+    placeholder?: boolean;
+}
 interface ExportBarProps {
     onTriggerExport: (type: 'docx' | 'txt' | 'pdf') => void;
+    items: ExportOptions[]
 }
 
 export const ExportBar: React.FC<ExportBarProps> = ({
-    onTriggerExport
+    onTriggerExport,
+    items
 }) => {
+    const radius = 80;
+
+    
+
     return (
-        <div className="export-bar">
-            {/* -- Label for the export group -- */}
-            <div className="export-group-label">
-                <Download size={14} />
-                <span style={{ fontSize: '8px', fontWeight: 700 }}>EXPORT</span>
+        <div className="export-radial-container">
+            {/* -- Central Trigger -- */}
+            <div className="export-trigger">
+                <Download size={20} />
+                <span style={{ fontSize: '7px', fontWeight: 800, marginTop: '2px' }}>EXPORT</span>
             </div>
 
-            {/* -- Export Actions -- */}
-            <button
-                className="export-btn"
-                onClick={() => onTriggerExport('docx')}
-                title="Export as DOCX"
-            >
-                <FileType size={16} />
-            </button>
-            <button
-                className="export-btn"
-                onClick={() => onTriggerExport('pdf')}
-                title="Export as PDF"
-            >
-                <FileIcon size={16} />
-            </button>
-            <button
-                className="export-btn"
-                onClick={() => onTriggerExport('txt')}
-                title="Export as TXT"
-            >
-                <Baseline size={16} />
-            </button>
+            {/* -- Orbiting Actions -- */}
+            {items.map((item, index) => {
+                const angle = 120 + (index * (240 - 120) / (items.length - 1));
+                const rad = angle * (Math.PI / 180);
+                const tx = Math.cos(rad) * radius;
+                const ty = Math.sin(rad) * radius;
+
+                return (
+                    <button
+                        key={item.label}
+                        className={`radial-item ${item.placeholder ? 'coming-soon' : ''}`}
+                        style={{
+                            '--tx': `${tx}px`,
+                            '--ty': `${ty}px`,
+                            transitionDelay: `${index * 0.05}s`
+                        } as any}
+                        onClick={() => !item.placeholder && onTriggerExport(item.type as any)}
+                        title={item.placeholder ? `${item.label} (Coming Soon)` : `Export as ${item.label}`}
+                    >
+                        {item.icon}
+                        <div className="radial-tooltip">{item.placeholder ? 'COMING SOON' : item.label}</div>
+                    </button>
+                );
+            })}
         </div>
     );
 };
@@ -84,14 +97,14 @@ export const performExportAction = async (
 
                 // Set initial font to Times New Roman
                 pdf.setFont("times", "normal");
-                
+
                 // Process the document nodes
                 const nodes = Array.from(element.children);
-                
+
                 nodes.forEach((node) => {
                     const tag = node.tagName.toLowerCase();
                     const text = (node as HTMLElement).innerText;
-                    
+
                     if (!text.trim() && tag !== 'hr') return;
 
                     let fontSize = 11;
@@ -116,7 +129,7 @@ export const performExportAction = async (
 
                     // Wrap text
                     const lines = pdf.splitTextToSize(text, contentWidth);
-                    
+
                     // Check for page break
                     const totalLineHeight = lines.length * (fontSize * 0.4);
                     if (cursorY + totalLineHeight + spacing > pdf.internal.pageSize.getHeight() - margin) {

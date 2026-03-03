@@ -38,11 +38,11 @@ import {
 } from "../utils/Crypto"
 import { SecureStorage } from "../utils/SecureStorage"
 import { EditorToolbar } from "./EditorToolbar"
-import { SetupPasswordModal } from "./SetupPasswordModal"
+import { PasswordModal } from "./PasswordModal"
 import { LockScreen } from "./LockScreen"
-import { PasswordVerifyModal } from "./PasswordVerifyModal"
 import { LinkModal } from "./LinkModal"
 import { TextPromptModal } from "./TextPromptModal"
+import { ShareModal } from "./ShareModal"
 import { ExportBar, performExportAction } from "./ExportBar"
 import { useIdleLock } from "../hooks/useIdleLock"
 import { useEditorState } from "../hooks/useEditorState"
@@ -62,7 +62,7 @@ import {
     AlignLeft,
     AlignCenter,
     AlignRight,
-    Lock
+    Lock, FileType, FileIcon, Baseline, FileCode, FileJson, Share2
 } from 'lucide-react'
 
 export const MainEditor = () => {
@@ -98,6 +98,7 @@ export const MainEditor = () => {
     // --- Export Management ---
     const [isExportVerifyOpen, setIsExportVerifyOpen] = React.useState(false)
     const [exportType, setExportType] = React.useState<'docx' | 'txt' | 'pdf' | null>(null)
+    const [isShareModalOpen, setIsShareModalOpen] = React.useState(false)
 
     const triggerExport = (type: 'docx' | 'txt' | 'pdf') => {
         if (settings.mode === "protected") {
@@ -401,23 +402,23 @@ export const MainEditor = () => {
         try {
             const salt = importSalt(settings.s || '')
             await deriveKeyFromPassword(password, salt)
-            
+
             // Compare with innerKey if possible, or just try to use it
             // Actually, we can just check if it matches innerKeyRef.current if we have it
             // But we might be in a state where we need to re-derive.
             // A simple way is to check if it decrypts something, but here we just need to verify identity.
-            
+
             // If innerKeyRef is already set, we should ideally compare bits. 
             // For now, if derivation doesn't throw and we have a key, we trust it or compare with current.
             // The most robust check is trying to use it if we were unlocking, 
             // but for unprotecting, we just need to confirm the user knows the passkey.
-            
+
             // Let's assume if it derives, it's correct for this stage, or we add a small piece of known data.
             // Since we don't have a 'hash' of the password, the best verify is "did it match the one that unlocked this?"
-            
+
             // We can't easily compare CryptoKey objects directly. 
             // In a real app we'd have a small encrypted payload "OK" to test against.
-            
+
             // For now, we'll proceed with unprotecting if derivation is successful.
             handleUnprotect()
             setIsVerifyModalOpen(false)
@@ -459,15 +460,28 @@ export const MainEditor = () => {
             setPromptConfig({ ...config, callback: resolve })
         })
     }
-
+    const items = [
+        { type: 'docx', icon: <FileType size={18} />, label: 'Word' },
+        { type: 'pdf', icon: <FileIcon size={18} />, label: 'PDF' },
+        { type: 'txt', icon: <Baseline size={18} />, label: 'Text' },
+        { type: 'md', icon: <FileCode size={18} />, label: 'Markdown', placeholder: true },
+        { type: 'json', icon: <FileJson size={18} />, label: 'JSON', placeholder: true },
+    ];
     return (
         <div className="editor-container">
             <div className="version-badge glass">
                 version : {import.meta.env.PACKAGE_VERSION}
             </div>
-            <ExportBar
-                onTriggerExport={triggerExport}
-            />
+            <div className="side-actions-stack">
+                <div className="share-trigger" onClick={() => setIsShareModalOpen(true)}>
+                    <Share2 size={20} />
+                    <span style={{ fontSize: '7px', fontWeight: 800, marginTop: '2px' }}>SHARE</span>
+                </div>
+                <ExportBar
+                    items={items}
+                    onTriggerExport={triggerExport}
+                />
+            </div>
 
             <EditorToolbar
                 editor={editor}
@@ -490,24 +504,27 @@ export const MainEditor = () => {
 
             {/* --- Modals --- */}
             {(isSetupModalOpen && !isLocked) && (
-                <SetupPasswordModal
-                    onComplete={handleSetupComplete}
-                    onClose={() => setIsSetupModalOpen(false)}
-                />
+            <PasswordModal
+                isOpen={isSetupModalOpen}
+                mode="setup"
+                onComplete={handleSetupComplete}
+                onClose={() => setIsSetupModalOpen(false)}
+            />
             )}
 
             {isLocked && <LockScreen filename={settings.fileName} onUnlock={handleUnlock} />}
 
-            <PasswordVerifyModal 
+            <PasswordModal
                 isOpen={isVerifyModalOpen}
-                onVerify={handleVerifyUnprotect}
+                mode="verify"
+                onComplete={handleVerifyUnprotect}
                 onClose={() => setIsVerifyModalOpen(false)}
                 title="Remove Protection?"
                 description="Confirming your passkey will remove end-to-end encryption from this file."
             />
 
             {isLinkModalOpen && (
-                <LinkModal 
+                <LinkModal
                     onSave={handleLinkSave}
                     onClose={() => setIsLinkModalOpen(false)}
                     initialUrl={editor?.getAttributes('link').href || ''}
@@ -529,14 +546,24 @@ export const MainEditor = () => {
                 />
             )}
 
-            <PasswordVerifyModal
+            <PasswordModal
                 isOpen={isExportVerifyOpen}
+                mode="verify"
                 onClose={() => setIsExportVerifyOpen(false)}
-                onVerify={verifyAndExport}
+                onComplete={verifyAndExport}
                 title="Verify Identity"
                 description="Enter password to authorize download"
                 buttonText="Confirm & Download"
                 icon={Lock}
+            />
+
+            <ShareModal
+                isOpen={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+                onShare={async (mode) => {
+                    // Logic placeholder
+                    return `https://obscura.app/s/${Math.random().toString(36).substring(7)}?m=${mode}`
+                }}
             />
 
             {/* --- Bubble Menu --- */}
