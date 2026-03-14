@@ -80,6 +80,40 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     const [activeGroup, setActiveGroup] = React.useState<string | null>(null)
     const [hoveredGrid, setHoveredGrid] = React.useState({ r: 0, c: 0 })
     const isMobile = useIsMobile()
+    const toolbarRef = React.useRef<HTMLDivElement>(null)
+
+    React.useEffect(() => {
+        const handleOutsideInteraction = (event: Event) => {
+            if (activeGroup && toolbarRef.current && !toolbarRef.current.contains(event.target as Node)) {
+                setActiveGroup(null)
+            }
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (!activeGroup) return
+            
+            if (event.key === 'Escape' && !isMobile) {
+                setActiveGroup(null)
+                return
+            }
+
+            if (toolbarRef.current && !toolbarRef.current.contains(event.target as Node)) {
+                setActiveGroup(null)
+            }
+        }
+
+        if (activeGroup) {
+            document.addEventListener('mousedown', handleOutsideInteraction)
+            document.addEventListener('touchstart', handleOutsideInteraction)
+            document.addEventListener('keydown', handleKeyDown)
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleOutsideInteraction)
+            document.removeEventListener('touchstart', handleOutsideInteraction)
+            document.removeEventListener('keydown', handleKeyDown)
+        }
+    }, [activeGroup, isMobile])
 
     if (!editor) return null
 
@@ -404,6 +438,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             </button>
 
             <div
+                ref={toolbarRef}
                 className={`floating-toolbar ${isOpen ? 'toolbar-open' : ''}`}
                 data-layout={isMobile ? "mobile" : "desktop"}
                 onMouseLeave={() => setHoveredGrid({ r: 0, c: 0 })}

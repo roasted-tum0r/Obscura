@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link2, X, Globe } from 'lucide-react'
+import { useModalClose } from '../hooks/useModalClose'
 
 interface LinkModalProps {
     onSave: (url: string) => void
@@ -9,6 +10,9 @@ interface LinkModalProps {
 
 export const LinkModal = ({ onSave, onClose, initialUrl = "" }: LinkModalProps) => {
     const [url, setUrl] = React.useState(initialUrl)
+    const modalRef = React.useRef<HTMLDivElement>(null)
+
+    useModalClose(true, onClose, modalRef)
 
     const handleSubmit = (e?: React.FormEvent) => {
         e?.preventDefault()
@@ -19,7 +23,7 @@ export const LinkModal = ({ onSave, onClose, initialUrl = "" }: LinkModalProps) 
 
     return (
         <div className="modal-overlay" style={{ zIndex: 3000 }}>
-            <div className="modal-content" style={{ maxWidth: '400px', padding: '24px' }}>
+            <div ref={modalRef} className="modal-content" style={{ maxWidth: '400px', padding: '24px' }}>
                 <button className="modal-close" onClick={onClose}>
                     <X size={18} />
                 </button>

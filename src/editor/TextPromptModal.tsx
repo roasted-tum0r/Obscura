@@ -1,5 +1,6 @@
 import React from 'react'
 import { X, ChevronRight } from 'lucide-react'
+import { useModalClose } from '../hooks/useModalClose'
 
 interface TextPromptModalProps {
     title: string
@@ -21,6 +22,9 @@ export const TextPromptModal = ({
     onClose
 }: TextPromptModalProps) => {
     const [value, setValue] = React.useState(initialValue)
+    const modalRef = React.useRef<HTMLDivElement>(null)
+
+    useModalClose(true, onClose, modalRef)
 
     const handleSubmit = (e?: React.FormEvent) => {
         e?.preventDefault()
@@ -31,7 +35,7 @@ export const TextPromptModal = ({
 
     return (
         <div className="modal-overlay" style={{ zIndex: 4000 }}>
-            <div className="modal-content" style={{ maxWidth: '400px', padding: '24px' }}>
+            <div ref={modalRef} className="modal-content" style={{ maxWidth: '400px', padding: '24px' }}>
                 <button className="modal-close" onClick={onClose}>
                     <X size={18} />
                 </button>

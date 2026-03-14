@@ -1,5 +1,6 @@
 import React from 'react'
 import { ArrowRight, Loader2, X, ShieldAlert, Shield, Info, Copy, Check, Eye, EyeOff, type LucideIcon } from 'lucide-react'
+import { useModalClose } from '../hooks/useModalClose'
 
 interface PasswordModalProps {
     isOpen: boolean
@@ -38,6 +39,9 @@ export const PasswordModal = ({
     const [shake, setShake] = React.useState(false)
     const [showPassword, setShowPassword] = React.useState(false)
     const [copied, setCopied] = React.useState(false)
+    const modalRef = React.useRef<HTMLDivElement>(null)
+
+    useModalClose(isOpen, onClose, modalRef)
 
     // Reset state when opening/closing
     React.useEffect(() => {
@@ -105,6 +109,7 @@ export const PasswordModal = ({
     return (
         <div className="modal-overlay" style={{ zIndex: 3000 }}>
             <div 
+                ref={modalRef}
                 className={`modal-content ${shake ? 'animate-shake' : ''}`} 
                 style={{ maxWidth: '440px', padding: '32px' }}
             >

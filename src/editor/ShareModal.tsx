@@ -1,5 +1,6 @@
 import React from 'react'
 import { X, Eye, Edit3, Copy, Check, Info } from 'lucide-react'
+import { useModalClose } from '../hooks/useModalClose'
 
 interface ShareModalProps {
     isOpen: boolean
@@ -12,6 +13,9 @@ export const ShareModal = ({ isOpen, onClose, onShare }: ShareModalProps) => {
     const [link, setLink] = React.useState('')
     const [isGenerating, setIsGenerating] = React.useState(false)
     const [isCopied, setIsCopied] = React.useState(false)
+    const modalRef = React.useRef<HTMLDivElement>(null)
+
+    useModalClose(isOpen, onClose, modalRef)
 
     // Reset state when modal opens
     React.useEffect(() => {
@@ -49,7 +53,7 @@ export const ShareModal = ({ isOpen, onClose, onShare }: ShareModalProps) => {
 
     return (
         <div className="modal-overlay" style={{ zIndex: 4000 }}>
-            <div className="modal-content" style={{ maxWidth: '520px' }}>
+            <div ref={modalRef} className="modal-content" style={{ maxWidth: '520px' }}>
                 <button className="modal-close" onClick={onClose}>
                     <X size={20} />
                 </button>

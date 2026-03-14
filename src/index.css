@@ -417,7 +417,7 @@ body {
   align-self: flex-start;
   min-height: 0; 
   flex: 1; 
-  overflow: hidden; /* Allow internal scrolling, fixed submenus will still breakout */
+  overflow: visible; /* Allow internal scrolling, fixed submenus will still breakout */
 }
 
 /* Mobile Bubble Constraints */
@@ -946,7 +946,7 @@ body {
 
 /* Desktop Submenu Alignment (To the right of the bubble) */
 [data-layout="desktop"] .toolbar-submenu {
-  left: calc(1.25vw + 64px);
+  left: 64px;
   top: 50%;
   transform: translateY(-50%) translateX(10px);
 }
@@ -962,7 +962,7 @@ body {
 /* Mobile Submenu Alignment (Centered in viewport) */
 [data-layout="mobile"] .toolbar-submenu {
   left: 50%;
-  bottom: 180px; /* Higher position to avoid overlap with 2-line toolbar */
+  bottom: calc(100% + 15px); /* Positioned just above the bubble */
   top: auto;
   transform: translateX(-50%) translateY(20px);
   /* Use extremely high z-index to stay above all other bubbles */
